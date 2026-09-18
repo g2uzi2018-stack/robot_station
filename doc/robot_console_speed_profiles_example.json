@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "robot_id": "demo-robot-001",
+  "revision": 1,
+  "profiles": {
+    "slow": {
+      "base_linear_mps": 0.15,
+      "base_angular_radps": 0.261799387799,
+      "body_lift_mps": 0.035,
+      "body_pitch_radps": 0.13962634016,
+      "waist_yaw_radps": 0.261799387799,
+      "arm_linear_mps": 0.04,
+      "arm_angular_radps": 0.314159265359,
+      "head_angular_radps": 0.314159265359,
+      "gripper_ratio_per_s": 0.3
+    },
+    "normal": {
+      "base_linear_mps": 0.3,
+      "base_angular_radps": 0.523598775598,
+      "body_lift_mps": 0.07,
+      "body_pitch_radps": 0.279252680319,
+      "waist_yaw_radps": 0.523598775598,
+      "arm_linear_mps": 0.08,
+      "arm_angular_radps": 0.628318530718,
+      "head_angular_radps": 0.628318530718,
+      "gripper_ratio_per_s": 0.6
+    },
+    "fast": {
+      "base_linear_mps": 0.45,
+      "base_angular_radps": 0.785398163397,
+      "body_lift_mps": 0.105,
+      "body_pitch_radps": 0.418879020479,
+      "waist_yaw_radps": 0.785398163397,
+      "arm_linear_mps": 0.12,
+      "arm_angular_radps": 0.942477796077,
+      "head_angular_radps": 0.942477796077,
+      "gripper_ratio_per_s": 0.9
+    }
+  }
+}
