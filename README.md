@@ -44,3 +44,25 @@ WebSocket 意图消息使用 `{web_v:1,type:"intent",id,action,params}`，服务
 ## 边界
 
 本项目不实现 IK、运动学、CAN、电机驱动、碰撞检测、实体急停或机器人端独立看门狗。控制安全和最终运动执行由机器人端程序负责；桥接层只负责认证、协议转换、状态和请求转发。
+
+## 模拟接收端
+
+仓库提供了一个只依赖 Python 3 标准库的 ZRCP/1 模拟接收端，供联调协议和控制台使用。它不会驱动任何真实设备，只会校验握手、会话、控制租约、使能、运动保活与停止，并将每一帧收发消息打印到终端。
+
+在服务器上启动：
+
+```bash
+python3 tools/mock_robot_receiver.py --host 0.0.0.0 --port 19001 --token test-token
+```
+
+然后让网关连接它：
+
+```bash
+ROBOT_MODE=tcp \
+ROBOT_HOST=127.0.0.1 \
+ROBOT_PORT=19001 \
+ROBOT_TOKEN=test-token \
+npm run dev
+```
+
+也可以直接运行已构建的服务。`--lease-seconds` 可用于延长测试租约，默认 60 秒。终端中 `[RX]` 是网关发来的消息，`[TX]` 是模拟接收端返回的消息。
