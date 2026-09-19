@@ -52,7 +52,7 @@ WebSocket 意图消息使用 `{web_v:1,type:"intent",id,action,params}`，服务
 在服务器上启动：
 
 ```bash
-python3 tools/mock_robot_receiver.py --host 0.0.0.0 --port 19001 --token test-token
+python3 tools/print_robot_receiver.py --host 0.0.0.0 --port 19001 --token test-token
 ```
 
 然后让网关连接它：

@@ -102,14 +102,14 @@ class ReceiverState:
             self.expire_locked()
 
             if name == "system.ping":
-                return self.ok("Pong", {"robot_id": "mock-robot"})
+                return self.ok("Pong", {"robot_id": "print-receiver"})
             if name == "system.describe":
                 return self.ok(
-                    "Mock receiver capabilities",
+                    "Print receiver capabilities",
                     {
                         "protocol_version": PROTOCOL_VERSION,
-                        "robot_id": "mock-robot",
-                        "robot_name": "ZRCP Mock Receiver",
+                        "robot_id": "print-receiver",
+                        "robot_name": "ZRCP Print Receiver",
                         "role": "operator",
                         "max_frame_bytes": MAX_FRAME_BYTES,
                         "commands": sorted(MOTION_COMMANDS | {
@@ -127,7 +127,7 @@ class ReceiverState:
                     return self.error("CONTROL_BUSY", "Another session holds the control lease.")
                 if not self.lease_id:
                     self.session_id = session_id
-                    self.lease_id = f"mock-lease-{secrets.token_hex(6)}"
+                    self.lease_id = f"print-lease-{secrets.token_hex(6)}"
                     self.lease_deadline = time.monotonic() + self.lease_seconds
                 else:
                     self.lease_deadline = time.monotonic() + self.lease_seconds
@@ -203,14 +203,14 @@ class ReceiverState:
 
     def state_data_locked(self) -> dict[str, Any]:
         return {
-            "robot_id": "mock-robot",
+            "robot_id": "print-receiver",
             "enabled": self.enabled,
             "control_held": self.lease_id is not None,
             "active_motion": dict(self.motion) if self.motion else None,
         }
 
 
-class MockReceiverHandler(socketserver.BaseRequestHandler):
+class PrintReceiverHandler(socketserver.BaseRequestHandler):
     state: ReceiverState
 
     def setup(self) -> None:
@@ -276,11 +276,11 @@ class MockReceiverHandler(socketserver.BaseRequestHandler):
             if token != self.state.token:
                 self.send_response(message, ReceiverState.error("UNAUTHORIZED", "Invalid receiver token"), None)
                 return False
-            self.session_id = f"mock-session-{secrets.token_hex(6)}"
+            self.session_id = f"print-session-{secrets.token_hex(6)}"
             self.send_response(message, ReceiverState.ok("Hello", {
                 "protocol_version": PROTOCOL_VERSION,
-                "robot_id": "mock-robot",
-                "robot_name": "ZRCP Mock Receiver",
+                "robot_id": "print-receiver",
+                "robot_name": "ZRCP Print Receiver",
                 "role": "operator",
                 "max_frame_bytes": MAX_FRAME_BYTES,
             }), self.session_id)
@@ -322,25 +322,25 @@ class MockReceiverHandler(socketserver.BaseRequestHandler):
                     return
 
 
-class MockReceiverServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+class PrintReceiverServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
     def __init__(self, server_address: tuple[str, int], state: ReceiverState):
         self.state = state
-        super().__init__(server_address, MockReceiverHandler)
+        super().__init__(server_address, PrintReceiverHandler)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Print-only ZRCP/1 receiver for Robot Station")
     parser.add_argument("--host", default="0.0.0.0", help="listen address (default: 0.0.0.0)")
     parser.add_argument("--port", type=int, default=9000, help="listen port (default: 9000)")
-    parser.add_argument("--token", default="mock-robot-token", help="token expected by system.hello")
+    parser.add_argument("--token", default="print-receiver-token", help="token expected by system.hello")
     parser.add_argument("--lease-seconds", type=float, default=LEASE_SECONDS, help="lease duration (default: 60)")
     args = parser.parse_args()
     state = ReceiverState(args.token, max(1.0, args.lease_seconds))
-    with MockReceiverServer((args.host, args.port), state) as server:
-        print(f"[READY] ZRCP/1 mock receiver listening on {args.host}:{args.port}", flush=True)
+    with PrintReceiverServer((args.host, args.port), state) as server:
+        print(f"[READY] ZRCP/1 print receiver listening on {args.host}:{args.port}", flush=True)
         print(f"[READY] token={args.token!r} lease_seconds={state.lease_seconds:g}", flush=True)
         try:
             server.serve_forever(poll_interval=0.5)
