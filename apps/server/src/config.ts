@@ -14,7 +14,6 @@ export const config = {
   sessionDays: numberEnv('SESSION_DAYS', 7),
   adminEmail: process.env.ADMIN_EMAIL ?? 'admin@example.com',
   adminPassword: process.env.ADMIN_PASSWORD,
-  robotMode: process.env.ROBOT_MODE ?? 'mock',
   robotHost: process.env.ROBOT_HOST,
   robotPort: numberEnv('ROBOT_PORT', 9000),
   robotToken: process.env.ROBOT_TOKEN,

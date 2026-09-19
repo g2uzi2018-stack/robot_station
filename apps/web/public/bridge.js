@@ -1,13 +1,16 @@
 (() => {
-  const live = new URLSearchParams(location.search).get('live') === '1';
+  const live = true;
   let socket = null;
   let ready = null;
+  let reconnectTimer = null;
+  let manuallyClosed = false;
   let sequence = 0;
   const pending = new Map();
   function nextId() { return `web-${Date.now().toString(36)}-${++sequence}`; }
   function rejectAll(error) { for (const item of pending.values()) item.reject(error); pending.clear(); }
   function connect() {
     if (ready) return ready;
+    manuallyClosed = false;
     ready = new Promise((resolve, reject) => {
       const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
       socket = new WebSocket(`${scheme}//${location.host}/api/control`);
@@ -22,13 +25,15 @@
         if (message.type === 'robot_status' || message.type === 'robot_message') window.dispatchEvent(new CustomEvent('robot-console-bridge', { detail: message }));
         if (message.ok === false && message.code === 'UNAUTHORIZED') { clearTimeout(timer); reject(new Error('登录状态已失效')); }
       });
-      socket.addEventListener('close', () => { socket = null; ready = null; rejectAll(new Error('网关连接已断开')); window.dispatchEvent(new CustomEvent('robot-console-closed')); });
+      socket.addEventListener('close', () => {
+        socket = null; ready = null; rejectAll(new Error('网关连接已断开')); window.dispatchEvent(new CustomEvent('robot-console-closed'));
+        if (!manuallyClosed && reconnectTimer === null) reconnectTimer = window.setTimeout(() => { reconnectTimer = null; connect().catch(() => {}); }, 1000);
+      });
       socket.addEventListener('error', () => {});
     });
     return ready;
   }
   async function request(action, params = {}) {
-    if (!live) throw new Error('演示模式未启用网关');
     await connect();
     if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('网关未连接');
     const id = nextId();
@@ -38,7 +43,7 @@
       socket.send(JSON.stringify({ web_v: 1, type: 'intent', id, action, params }));
     });
   }
-  function close() { if (socket) socket.close(); }
+  function close() { manuallyClosed = true; if (reconnectTimer !== null) { clearTimeout(reconnectTimer); reconnectTimer = null; } if (socket) socket.close(); }
   window.robotConsoleBridge = Object.freeze({ live, connect, request, close });
   if (live) connect().catch(error => window.dispatchEvent(new CustomEvent('robot-console-bridge-error', { detail: error })));
 })();

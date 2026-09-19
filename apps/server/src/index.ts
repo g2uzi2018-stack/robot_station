@@ -43,7 +43,18 @@ const controlSockets = new Set<any>();
 let leaseOwner: ControlState | null = null;
 function ack(socket: any, id: unknown, motionId: unknown, response: {ok:boolean; code:string; msg:string; data?:Record<string,unknown>}, command?: string) { sendJson(socket, { web_v:1, type:'ack', id: typeof id==='string' ? id : undefined, motion_id: typeof motionId==='string' ? motionId : null, command, ok:response.ok, code:response.code, msg:response.msg, data:response.data ?? {} }); }
 function asFailure(error: unknown) { return { ok:false, code:'ROBOT_TIMEOUT', msg:error instanceof Error ? error.message : 'Robot unavailable', data:{} }; }
-async function releaseControl(state: ControlState) { const leaseId = state.leaseId; if (leaseOwner === state) leaseOwner = null; state.leaseId = null; state.enabled = false; if (!leaseId) return; try { await robot.send('motion.stop_all',{lease_id:leaseId}); } catch {} try { await robot.send('control.release',{lease_id:leaseId}); } catch {} }
+async function releaseControl(state: ControlState) {
+  const leaseId = state.leaseId;
+  if (!leaseId) { state.enabled = false; if (leaseOwner === state) leaseOwner = null; return; }
+  // Keep the owner reserved until the robot has received the stop and release
+  // frames. A page refresh can open a new socket immediately; releasing the
+  // gateway lease first would let that socket race the old cleanup on ZRCP.
+  state.enabled = false;
+  try { await robot.send('motion.stop_all',{lease_id:leaseId}); } catch {}
+  try { await robot.send('control.release',{lease_id:leaseId}); } catch {}
+  state.leaseId = null;
+  if (leaseOwner === state) leaseOwner = null;
+}
 async function handleControlMessage(socket: any, state: ControlState, user: User, raw: string) {
   let message: {type?:string; id?:string; action?:string; motion_id?:string; params?:Record<string,unknown>};
   try { message=JSON.parse(raw); } catch { ack(socket,undefined,null,{ok:false,code:'INVALID_MESSAGE',msg:'Invalid WebSocket message',data:{}}); return; }
@@ -54,7 +65,7 @@ async function handleControlMessage(socket: any, state: ControlState, user: User
   try {
     if (message.action==='control.acquire') { if (leaseOwner && leaseOwner !== state) { ack(socket,message.id,null,{ok:false,code:'CONTROL_BUSY',msg:'Another operator currently holds control',data:{}},message.action); return; } if (state.leaseId) { ack(socket,message.id,null,{ok:true,code:'OK',msg:'Control lease already held',data:{enabled:state.enabled}},message.action); return; } leaseOwner=state; const response=await robot.send('control.acquire',params); const leaseId=typeof response.data.lease_id==='string' ? response.data.lease_id : null; if (response.ok && leaseId) state.leaseId=leaseId; else if (leaseOwner === state) leaseOwner=null; const data={...response.data}; delete data.lease_id; ack(socket,message.id,null,{...response,data},message.action); return; }
     if (message.action==='control.enable') { if (!state.leaseId && leaseOwner && leaseOwner !== state) { ack(socket,message.id,null,{ok:false,code:'CONTROL_BUSY',msg:'Another operator currently holds control',data:{}},message.action); return; } if (!state.leaseId) { leaseOwner=state; const acquired=await robot.send('control.acquire',{}); const leaseId=typeof acquired.data.lease_id==='string' ? acquired.data.lease_id : null; if(!acquired.ok || !leaseId) { if (leaseOwner === state) leaseOwner=null; ack(socket,message.id,null,acquired,message.action); return; } state.leaseId=leaseId; } const response=await robot.send('control.enable',{...params,lease_id:state.leaseId}); if (response.ok) state.enabled=true; else { await releaseControl(state); } ack(socket,message.id,null,{...response,data:{...response.data,enabled:response.ok}},message.action); return; }
-    if (message.action==='control.release') { const leaseId=state.leaseId; const response=leaseId ? await robot.send('control.release',{...params,lease_id:leaseId}) : {ok:true,code:'OK',msg:'Control already released',data:{}}; state.leaseId=null; state.enabled=false; ack(socket,message.id,null,response,message.action); return; }
+    if (message.action==='control.release') { const leaseId=state.leaseId; const response=leaseId ? await robot.send('control.release',{...params,lease_id:leaseId}) : {ok:true,code:'OK',msg:'Control already released',data:{}}; state.leaseId=null; state.enabled=false; if (leaseOwner===state) leaseOwner=null; ack(socket,message.id,null,response,message.action); return; }
     if (message.action==='motion.stop_all') { const response=await robot.send('motion.stop_all',{...params,...(state.leaseId?{lease_id:state.leaseId}:{})}); state.enabled=false; ack(socket,message.id,null,response,message.action); return; }
     if (['control.heartbeat','motion.stop','motion.keepalive','base.jog','body.lift.jog','body.pitch.jog','waist.yaw.jog','arm.position.jog','arm.rotation.jog','arm.move_to','gripper.jog','head.jog','head.center'].includes(message.action) && !state.leaseId) { ack(socket,message.id,message.motion_id,{ok:false,code:'LEASE_REQUIRED',msg:'Control lease is not enabled',data:{}},message.action); return; }
     if (state.leaseId) params.lease_id=state.leaseId;
@@ -66,7 +77,7 @@ app.register(async (instance) => { instance.get('/api/control', { websocket: tru
   const state: ControlState={leaseId:null,enabled:false,closed:false,chain:Promise.resolve()}; controlSockets.add(socket);
   sendJson(socket,{web_v:1,type:'ready',data:{user:publicUser(user),robot:robot.getStatus()}});
   socket.on('message',(raw: any)=>{ state.chain=state.chain.then(()=>handleControlMessage(socket,state,user,raw.toString())).catch(error=>{ app.log.error(error,'control websocket handler failed'); }); });
-  const cleanup=()=>{ if(state.closed)return; state.closed=true; controlSockets.delete(socket); void releaseControl(state); };
+  const cleanup=()=>{ if(state.closed)return; state.closed=true; controlSockets.delete(socket); state.chain=state.chain.catch(()=>{}).then(()=>releaseControl(state)); };
   socket.on('close',cleanup); socket.on('error',cleanup);
 }); });
 robot.on('message',(message: any)=>{ if(message.type==='response') return; for(const socket of controlSockets) sendJson(socket,{web_v:1,type:'robot_message',message}); });
@@ -78,5 +89,5 @@ app.get('/console.html', { preHandler: requireAuth }, async (_request, reply) =>
 app.get('/admin', { preHandler: roleGuard('admin') }, async (_request, reply) => reply.sendFile('admin.html'));
 
 await ensureAdmin();
-if(config.robotMode==='tcp') robot.connect().catch((error) => app.log.error(error,'robot connection failed'));
+robot.connect().catch((error) => app.log.error(error,'robot connection failed'));
 await app.listen({host:config.host,port:config.port});
