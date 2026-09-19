@@ -1,0 +1,45 @@
+import path from 'node:path';
+import Fastify, { type FastifyReply, type FastifyRequest } from 'fastify';
+import cookie from '@fastify/cookie';
+import fastifyStatic from '@fastify/static';
+import websocket from '@fastify/websocket';
+import { z } from 'zod';
+import { config } from './config.js';
+import { audit, createSession, createUser, deleteSession, ensureAdmin, findUserByEmail, findUserBySession, listUsers, updateUser, type Role, type User } from './db.js';
+import { hashPassword, verifyPassword } from './password.js';
+import { robot } from './robot.js';
+
+declare module 'fastify' { interface FastifyRequest { user?: User } }
+const app = Fastify({ logger: true });
+await app.register(cookie);
+await app.register(websocket);
+await app.register(fastifyStatic, { root: path.resolve(config.webRoot), prefix: '/', serve: false });
+const loginSchema = z.object({ email: z.string().email(), password: z.string().min(1) });
+const userCreateSchema = z.object({ email: z.string().email(), displayName: z.string().min(1).max(120), password: z.string().min(12), role: z.enum(['admin','operator','viewer']) });
+const userPatchSchema = z.object({ displayName: z.string().min(1).max(120).optional(), password: z.string().min(12).optional(), role: z.enum(['admin','operator','viewer']).optional(), enabled: z.boolean().optional() });
+const commandSchema = z.object({ command: z.string().min(1), params: z.record(z.string(), z.unknown()).default({}) });
+const allowedRobotCommands = new Set(['system.ping','system.describe','state.get','state.subscribe','control.acquire','control.enable','control.heartbeat','control.release','motion.stop','motion.stop_all','motion.keepalive','base.jog','body.lift.jog','body.pitch.jog','waist.yaw.jog','arm.position.jog','arm.rotation.jog','arm.move_to','gripper.jog','head.jog','head.center']);
+const sessionCookie = { httpOnly: true, sameSite: 'lax' as const, secure: config.isProduction, path: '/' };
+function unauthorized(reply: FastifyReply) { return reply.code(401).send({ ok:false, code:'UNAUTHORIZED', msg:'Login required', data:{} }); }
+async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> { const user = findUserBySession(request.cookies[config.cookieName]); if (!user || !user.enabled) { unauthorized(reply); return; } request.user = user; }
+function roleGuard(...roles: Role[]) { return async (request: FastifyRequest, reply: FastifyReply): Promise<void> => { await requireAuth(request, reply); if (!request.user) return; if (!roles.includes(request.user.role)) reply.code(403).send({ ok:false, code:'FORBIDDEN', msg:'Insufficient role', data:{} }); }; }
+
+app.get('/healthz', async () => ({ ok:true, service:'robot-station-server', robot:robot.getStatus() }));
+app.post('/api/auth/login', async (request, reply) => { const parsed=loginSchema.safeParse(request.body); if(!parsed.success) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Invalid login input',data:{}}); const user=findUserByEmail(parsed.data.email); if(!user || !user.enabled || !(await verifyPassword(parsed.data.password,user.passwordHash))) return reply.code(401).send({ok:false,code:'UNAUTHORIZED',msg:'Invalid email or password',data:{}}); const token=createSession(user.id,Date.now()+config.sessionDays*86400000); reply.setCookie(config.cookieName,token,{...sessionCookie,maxAge:config.sessionDays*86400}); audit(user.id,'auth.login',{email:user.email}); const { passwordHash: _passwordHash, ...safeUser } = user; return {ok:true,code:'OK',msg:'Logged in',data:{user:safeUser}}; });
+app.post('/api/auth/logout', { preHandler: requireAuth }, async (request, reply) => { deleteSession(request.cookies[config.cookieName]); reply.clearCookie(config.cookieName,{path:'/'}); if(request.user) audit(request.user.id,'auth.logout',{}); return {ok:true,code:'OK',msg:'Logged out',data:{}}; });
+app.get('/api/auth/me', { preHandler: requireAuth }, async (request) => ({ok:true,code:'OK',msg:'Authenticated',data:{user:request.user}}));
+app.get('/api/users', { preHandler: roleGuard('admin') }, async () => ({ok:true,code:'OK',msg:'Users',data:{users:listUsers()}}));
+app.post('/api/users', { preHandler: roleGuard('admin') }, async (request, reply) => { const parsed=userCreateSchema.safeParse(request.body); if(!parsed.success) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Invalid user input',data:{}}); try { const user=createUser({email:parsed.data.email,displayName:parsed.data.displayName,passwordHash:await hashPassword(parsed.data.password),role:parsed.data.role}); audit(request.user!.id,'user.create',{userId:user.id,email:user.email,role:user.role}); return reply.code(201).send({ok:true,code:'OK',msg:'User created',data:{user}}); } catch { return reply.code(409).send({ok:false,code:'DUPLICATE_ID',msg:'Email already exists',data:{}}); } });
+app.patch('/api/users/:id', { preHandler: roleGuard('admin') }, async (request, reply) => { const parsed=userPatchSchema.safeParse(request.body); const id=Number((request.params as {id:string}).id); if(!Number.isInteger(id)||!parsed.success) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Invalid user input',data:{}}); const patch=parsed.data; const changes: {displayName?:string;role?:Role;enabled?:boolean;passwordHash?:string} = {}; if (patch.displayName !== undefined) changes.displayName=patch.displayName; if (patch.role !== undefined) changes.role=patch.role; if (patch.enabled !== undefined) changes.enabled=patch.enabled; if (patch.password !== undefined) changes.passwordHash=await hashPassword(patch.password); const user=updateUser(id,changes); if(!user) return reply.code(404).send({ok:false,code:'NOT_FOUND',msg:'User not found',data:{}}); audit(request.user!.id,'user.update',{userId:id,changes:Object.keys(patch)}); return {ok:true,code:'OK',msg:'User updated',data:{user}}; });
+app.get('/api/robot/status', { preHandler: requireAuth }, async () => ({ok:true,code:'OK',msg:'Robot status',data:robot.getStatus()}));
+app.post('/api/robot/command', { preHandler: roleGuard('admin','operator') }, async (request, reply) => { const parsed=commandSchema.safeParse(request.body); if(!parsed.success) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Invalid command input',data:{}}); if(!allowedRobotCommands.has(parsed.data.command)) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Command is not allowed by the gateway',data:{}}); try { const response=await robot.send(parsed.data.command,parsed.data.params); audit(request.user!.id,'robot.command',{command:parsed.data.command,ok:response.ok,code:response.code}); return {ok:response.ok,code:response.code,msg:response.msg,data:response.data}; } catch(error) { return reply.code(502).send({ok:false,code:'ROBOT_TIMEOUT',msg:error instanceof Error?error.message:'Robot unavailable',data:{}}); } });
+
+app.register(async (instance) => { instance.get('/api/control', { websocket: true }, (socket, request) => { const user=findUserBySession(request.cookies[config.cookieName]); if(!user || !user.enabled) { socket.send(JSON.stringify({ok:false,code:'UNAUTHORIZED',msg:'Login required'})); socket.close(); return; } socket.send(JSON.stringify({web_v:1,type:'ready',data:{user}})); socket.on('message', async (raw: import('ws').RawData) => { try { const message=JSON.parse(raw.toString()) as {type?:string;id?:string;action?:string;motion_id?:string;params?:Record<string,unknown>}; if(message.type==='ping') { socket.send(JSON.stringify({web_v:1,type:'pong',id:message.id,bridge_time_ms:Date.now()})); return; } if(message.action && !allowedRobotCommands.has(message.action)) { socket.send(JSON.stringify({web_v:1,type:'ack',id:message.id,motion_id:message.motion_id ?? null,ok:false,code:'INVALID_ARGUMENT',msg:'Command is not allowed by the gateway',data:{}})); return; } if(!['admin','operator'].includes(user.role)) { socket.send(JSON.stringify({web_v:1,type:'ack',id:message.id,motion_id:null,ok:false,code:'FORBIDDEN',msg:'Operator role required',data:{}})); return; } if(message.type==='intent' && message.action) { const response=await robot.send(message.action,message.params ?? {}); socket.send(JSON.stringify({web_v:1,type:'ack',id:message.id,motion_id:message.motion_id ?? null,ok:response.ok,code:response.code,msg:response.msg,data:response.data})); } } catch { socket.send(JSON.stringify({web_v:1,type:'ack',ok:false,code:'INVALID_MESSAGE',msg:'Invalid WebSocket message',data:{}})); } }); }); });
+app.get('/', async (_request, reply) => reply.sendFile('index.html'));
+app.get('/session.js', async (_request, reply) => reply.sendFile('session.js'));
+app.get('/console.html', { preHandler: requireAuth }, async (_request, reply) => reply.sendFile('console.html'));
+app.get('/admin', { preHandler: roleGuard('admin') }, async (_request, reply) => reply.sendFile('admin.html'));
+
+await ensureAdmin();
+if(config.robotMode==='tcp') robot.connect().catch((error) => app.log.error(error,'robot connection failed'));
+await app.listen({host:config.host,port:config.port});

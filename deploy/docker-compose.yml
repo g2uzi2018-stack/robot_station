@@ -1,0 +1,13 @@
+services:
+  robot-station:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file: ../.env
+    ports:
+      - "8080:8080"
+    volumes:
+      - robot_station_data:/app/data
+    restart: unless-stopped
+volumes:
+  robot_station_data:

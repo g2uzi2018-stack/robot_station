@@ -1,0 +1,1071 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<meta name="description" content="机器人控制台 · 独立 Web UI 交互原型。所有动作均为浏览器内模拟，不连接真实机器人。">
+<title>机器人控制台 · v0.3</title>
+<style>
+:root {
+  --ink:#202630; --muted:#727986; --faint:#9aA1ad; --blue:#087cf0;
+  --blue-soft:#eaf3ff; --line:rgba(54,72,104,.09); --red:#db494a;
+  --green:#2b9a75; --shadow:0 8px 28px rgba(48,67,97,.045),0 1px 3px rgba(48,67,97,.025);
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Microsoft YaHei","Noto Sans CJK SC",sans-serif;
+}
+*{box-sizing:border-box}
+html{min-width:340px;background:#f4f6f9}
+body{margin:0;color:var(--ink);font-family:var(--font);font-size:14px;-webkit-font-smoothing:antialiased;
+  background:radial-gradient(ellipse at 5% 10%,rgba(215,231,254,.46),transparent 40%),radial-gradient(ellipse at 97% 30%,rgba(226,221,247,.32),transparent 38%),linear-gradient(145deg,#f7f9fc,#f1f3f7);min-height:100vh}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at 50% 100%,rgba(255,255,255,.75),transparent 60%);z-index:0}
+button,input,select{font:inherit}
+button{cursor:pointer;color:inherit;-webkit-tap-highlight-color:transparent}
+button,input{outline:none}
+button{border:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid rgba(0,122,255,.43);outline-offset:3px}
+button:disabled{cursor:not-allowed}
+svg.icon{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.symbols{position:absolute;width:0;height:0;overflow:hidden}
+.shell{position:relative;max-width:1512px;margin:auto;padding:0 38px 22px}
+.topbar{height:92px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--line);gap:20px}
+.brand{display:flex;align-items:center;gap:12px;flex-shrink:0}
+.brand-mark{height:40px;width:40px;background:rgba(255,255,255,.95);display:grid;place-items:center;border:1px solid rgba(255,255,255,.95);border-radius:13px;box-shadow:0 3px 12px rgba(41,76,131,.09);color:var(--blue)}
+.brand-mark .icon{width:25px;height:25px;stroke-width:1.6}
+.brand-name{font-size:15px;letter-spacing:.3px;font-weight:680}
+.brand-sub{font-size:10px;letter-spacing:2.3px;color:#939aa6;margin-top:5px}
+.top-actions{display:flex;align-items:center;gap:10px}
+.connection{display:flex;align-items:center;gap:8px;font-size:12px;color:#5c6572;padding:8px 12px;background:rgba(255,255,255,.58);border:1px solid rgba(255,255,255,.94);border-radius:30px}
+.dot{height:6px;width:6px;border-radius:50%;background:var(--green);box-shadow:0 0 0 3px rgba(43,154,117,.09);flex-shrink:0}
+.dot.off{background:#a9b0ba;box-shadow:none}
+.top-button{height:35px;border-radius:10px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;background:transparent;font-size:12px;color:#69717d;transition:background .16s}
+.top-button:hover{background:rgba(255,255,255,.85)}
+.top-button .icon{width:16px;height:16px}
+.divider-v{width:1px;height:18px;background:var(--line);margin:0 2px}
+.intro{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:29px 0 22px}
+h1{font-size:29px;letter-spacing:-.9px;font-weight:670;margin:0 0 9px;line-height:1.25}
+.subtitle{font-size:13px;color:var(--muted);margin:0;line-height:1.65}
+.operation-bar{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.speed-block{display:flex;align-items:center;gap:9px;margin-right:5px}
+.speed-label{color:var(--muted);font-size:11px}
+.segmented{display:inline-flex;align-items:center;gap:2px;background:rgba(109,129,159,.075);border:1px solid rgba(83,109,147,.035);padding:3px;border-radius:11px}
+.segmented button{background:transparent;padding:7px 16px;border-radius:8px;color:#818895;font-size:12px;white-space:nowrap;transition:background .15s,color .15s,box-shadow .15s}
+.segmented button[aria-pressed="true"],.segmented button[aria-selected="true"]{background:#fff;color:var(--ink);box-shadow:0 1px 4px rgba(38,58,88,.10);font-weight:600}
+.speed-options button{padding:7px 11px;font-size:11px}
+.primary-button,.stop-button,.secondary-button{height:42px;border-radius:12px;padding:0 16px;display:inline-flex;align-items:center;justify-content:center;gap:7px;font-size:12px;font-weight:600;transition:filter .15s,background .15s,transform .12s;white-space:nowrap}
+.primary-button{background:var(--blue);color:#fff;box-shadow:0 3px 10px rgba(0,122,255,.16)}
+.primary-button:hover{filter:brightness(1.05)}
+.primary-button:active,.secondary-button:active,.stop-button:active{transform:scale(.98)}
+.primary-button:disabled{background:#c8d5e6;box-shadow:none}
+.primary-button.enabled{color:#397c68;background:#e6f2ec;box-shadow:none}
+.primary-button.enabled:hover{background:#dceddf}
+.primary-button .icon,.stop-button .icon,.secondary-button .icon{width:16px;height:16px}
+.stop-button{background:#fff1f1;color:#cb4145;border:1px solid rgba(204,57,66,.13);padding-right:12px}
+.stop-button:hover{background:#fde6e6}
+.stop-button kbd{font-size:9px;padding:3px 5px;border-radius:4px;background:rgba(212,66,73,.065);color:#c56e73;font-family:inherit;font-weight:500;margin-left:4px}
+.secondary-button{background:#f0f3f7;color:#616a77;border:1px solid #e6eaf0;box-shadow:none}
+.demo-banner{min-height:43px;display:flex;align-items:center;justify-content:space-between;gap:16px;background:rgba(255,255,255,.61);border:1px solid rgba(255,255,255,.95);border-radius:12px;padding:10px 15px;margin-bottom:21px;backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+.demo-left{display:flex;align-items:center;gap:9px;font-size:11px;color:#7a8391;line-height:1.6}
+.demo-left .icon{color:#829bc0;width:15px;height:15px}
+.demo-label{font-size:10px;font-weight:650;letter-spacing:.5px;color:#6983a8;padding:1px 6px;background:#edf3fc;border:1px solid #e4edf9;border-radius:4px;white-space:nowrap}
+.demo-right{color:#7a8492;font-size:10px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+.demo-right .icon{width:13px;height:13px}
+.workspace{display:grid;grid-template-columns:minmax(235px,.95fr) minmax(380px,1.5fr) minmax(230px,.95fr);align-items:stretch;gap:19px}
+.stack{display:flex;flex-direction:column;gap:19px;min-width:0}
+.card{background:rgba(255,255,255,.78);border:1px solid rgba(255,255,255,.96);border-radius:23px;box-shadow:var(--shadow);backdrop-filter:blur(28px);-webkit-backdrop-filter:blur(28px);min-width:0}
+.card-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:18px}
+h2{font-size:16px;font-weight:650;letter-spacing:-.2px;margin:0;display:flex;align-items:center;gap:8px;line-height:1.5}
+h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
+.hint{height:20px;width:20px;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;border-radius:50%;background:transparent;color:#a9b0bc;padding:0;vertical-align:middle}
+.hint .icon{height:14px;width:14px;stroke-width:1.5}
+.hint:hover,.hint:focus-visible{color:var(--blue);background:var(--blue-soft)}
+.card-subtitle{font-size:12px;color:#818b9a;margin:-8px 0 17px;line-height:1.6}
+.base-card{padding:22px 22px 17px;flex:1}
+.dpad{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(3,62px);gap:7px;max-width:258px;margin:0 auto;align-items:stretch}
+.jog{background:#f4f6f9;border:1px solid #edf0f5;border-radius:12px;display:flex;align-items:center;justify-content:center;gap:8px;transition:background .12s,border-color .12s,box-shadow .12s,color .12s,transform .1s;user-select:none;-webkit-user-select:none;touch-action:none;color:#526982}
+.jog:hover:not(:disabled){background:#edf5ff;border-color:#cfe3ff;color:var(--blue)}
+.jog:active:not(:disabled),.jog.pressing{background:#e0efff!important;border-color:#b5d8ff!important;color:var(--blue)!important;box-shadow:0 0 0 3px rgba(0,122,255,.055);transform:scale(.97)}
+.jog:disabled{color:#98a2b0;background:#f8f9fb;border-color:#f1f3f6}
+.jog:disabled .icon{opacity:.78}
+.dpad .jog{flex-direction:column;gap:5px;font-size:12px;font-weight:500}
+.dpad .jog .icon{width:19px;height:19px;stroke-width:1.8}
+.dpad-center{grid-area:2/2;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;position:relative;color:#aab5c6}
+.dpad-center .icon{height:27px;width:27px;stroke-width:1.4}
+.dpad-center span{font-size:8px;letter-spacing:1.1px;color:#a9b2bf}
+.base-forward{grid-area:1/2}.base-left{grid-area:2/1}.base-right{grid-area:2/3}.base-backward{grid-area:3/2}
+.mini-status{display:flex;align-items:center;justify-content:center;gap:6px;font-size:10px;color:#9199a7;margin-top:17px;line-height:1.5}
+.mini-status .icon{height:12px;width:12px;stroke-width:1.5}
+.mini-status b{font-weight:500;color:#6b7a8f;font-variant-numeric:tabular-nums}
+.lift-card{padding:20px 22px 21px}
+.lift-card .card-header{margin-bottom:12px}
+.measure-line{display:flex;align-items:baseline;justify-content:space-between;gap:6px;margin-bottom:12px}
+.measure{font-size:29px;letter-spacing:-.9px;font-weight:570;line-height:1.2;font-variant-numeric:tabular-nums}
+.unit{font-size:11px;color:#99a1ae;margin-left:4px;letter-spacing:0;font-weight:450}
+.quiet-label{font-size:10px;color:#9da5b1}
+.track{height:5px;border-radius:8px;background:#edf0f5;position:relative;overflow:hidden}
+.track .fill{height:100%;width:45%;background:linear-gradient(90deg,#a7ceff,#73aff7);border-radius:inherit;transition:width .08s linear}
+.track-ends{display:flex;justify-content:space-between;font-size:9px;color:#a4abb7;margin-top:6px;margin-bottom:14px}
+.two-buttons{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.two-buttons .jog{height:42px;font-size:12px}
+.two-buttons .icon{height:15px;width:15px}
+.arm-card{padding:22px 24px 20px;display:flex;flex-direction:column}
+.arm-card .card-header{margin-bottom:20px}
+.arm-picker{border-radius:9px;padding:3px}
+.arm-picker button{padding:6px 12px;font-size:12px;border-radius:6px}
+.arm-picker button[aria-pressed="true"]{color:var(--blue)}
+.feedback-line{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:11px}
+.eyebrow{font-size:11px;color:#818c9c;letter-spacing:.25px;display:flex;align-items:center;gap:4px}
+.feedback-chip{font-size:9px;padding:3px 7px;border-radius:5px;background:#f3f5f8;color:#9ba4b2;letter-spacing:.3px}
+.pose-readout{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pose-tile{min-width:0;padding:12px 12px 11px;background:rgba(244,247,251,.92);border:1px solid rgba(232,237,244,.50);border-radius:12px}
+.pose-tile .label{color:#7d889a;font-size:11px;white-space:nowrap}
+.pose-tile .label small{font-size:9px;color:#a2afc1;margin-left:4px}
+.pose-value{display:flex;align-items:baseline;gap:4px;font-size:23px;font-weight:570;letter-spacing:-.5px;font-variant-numeric:tabular-nums;margin-top:7px;line-height:1.1;white-space:nowrap}
+.pose-value small{font-size:10px;letter-spacing:0;color:#a0aabb;font-weight:450}
+.control-mode{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:21px 0 14px}
+.mode-options button{padding:6px 17px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:5px}
+.mode-options .icon{height:14px;width:14px;stroke-width:1.65}
+.reference{font-size:10px;color:#929caa;display:flex;align-items:center;gap:2px;white-space:nowrap}
+.reference .hint{width:17px;height:17px}
+.axes{display:flex;flex-direction:column;gap:9px}
+.axis-row{display:grid;grid-template-columns:49px 1fr 1fr;align-items:center;gap:9px}
+.axis-name{font-size:12px;color:#748296;display:flex;align-items:center;gap:1px;white-space:nowrap}
+.axis-name .hint{width:14px;height:15px}
+.axis-name .hint .icon{width:11px;height:11px}
+.axis-button{height:46px;font-size:13px;font-weight:500}
+.axis-button .icon{height:17px;width:17px;stroke-width:1.6}
+.axes-note{display:flex;align-items:center;justify-content:space-between;margin:12px 0 16px;gap:7px}
+.axes-note>span{font-size:11px;color:#8b97a7}
+.link-button{background:transparent;padding:3px 0;color:#5187c8;font-size:11px;display:inline-flex;align-items:center;gap:3px;white-space:nowrap}
+.link-button:hover{color:var(--blue)}
+.link-button:disabled{color:#aab4c2}
+.link-button .icon{height:12px;width:12px}
+.gripper-section{border-top:1px solid var(--line);padding-top:18px;margin-top:auto}
+.gripper-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.gripper-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
+.gripper-title .icon{height:17px;width:17px;color:#859ab6}
+.gripper-value{color:#8d98a8;font-size:10px}
+.gripper-value b{font-size:13px;font-weight:550;color:#6b7d95;font-variant-numeric:tabular-nums}
+.gripper-controls{display:grid;grid-template-columns:1fr 54px 1fr;align-items:center;gap:8px}
+.gripper-controls .jog{height:42px;font-size:12px}
+.gripper-glyph{height:39px;position:relative;color:#9aabc2;display:flex;align-items:center;justify-content:center}
+.gripper-glyph svg{width:48px;height:38px;overflow:visible;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.gripper-glyph .finger{transition:transform .08s linear}
+.gripper-footnote{font-size:9px;text-align:center;color:#aab1bc;margin-top:10px;line-height:1.4}
+.head-card{padding:22px 22px 17px;flex:1}
+.head-card .card-header{margin-bottom:9px}
+.head-readout{display:flex;justify-content:center;align-items:center;gap:18px;padding:3px 0 12px}
+.head-stat{font-size:9px;color:#9ba6b6;min-width:40px}
+.head-stat b{display:block;font-size:14px;color:#72859e;font-weight:550;margin-top:4px;font-variant-numeric:tabular-nums}
+.head-glyph{perspective:250px;width:67px;height:47px;display:flex;align-items:center;justify-content:center}
+.head-face{width:52px;height:35px;border-radius:13px;border:1px solid #dae5f5;background:linear-gradient(140deg,#f2f7fd,#edf3fa);box-shadow:inset 0 2px 4px #fff,0 4px 8px rgba(49,93,158,.04);display:flex;align-items:center;justify-content:center;gap:12px;position:relative;transition:transform .08s linear}
+.head-face::after{content:"";position:absolute;width:18px;height:3px;background:#d6e1f0;bottom:-7px;border-radius:2px}
+.eye{width:4px;height:6px;background:#91afd5;border-radius:3px}
+.head-pad{grid-template-rows:repeat(3,51px);gap:6px;max-width:228px}
+.head-pad .jog{font-size:12px;gap:3px;flex-direction:row}
+.head-pad .jog .icon{height:15px;width:15px}
+.head-neutral{grid-area:2/2;flex-direction:column!important;font-size:10px!important;background:#fbfcfd;border-color:#f0f3f7;color:#96a4b8}
+.head-neutral .icon{height:15px!important;width:15px!important}
+.body-pose-card{padding:20px 22px}
+.body-pose-card .card-header{margin-bottom:15px}
+.body-axis+.body-axis{margin-top:14px;padding-top:14px;border-top:1px solid var(--line)}
+.body-axis-heading{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:9px;min-height:21px}
+.body-axis-label{display:flex;align-items:center;gap:4px;color:#798699;font-size:12px}
+.body-axis-label .hint{height:18px;width:18px}
+.body-axis-label .hint .icon{height:12px;width:12px}
+.body-angle{display:flex;align-items:baseline;gap:3px;font-size:11px;color:#a1abba;white-space:nowrap}
+.body-angle b{font-size:16px;font-weight:570;color:#6c7f99;font-variant-numeric:tabular-nums;letter-spacing:-.2px}
+.body-pose-card .two-buttons .jog{height:40px}
+.feature-note{font-size:10px;line-height:1.6;color:#a78258;margin:8px 0 0;padding:7px 9px;background:#fff8ef;border:1px solid #f6eee2;border-radius:8px}
+.body-axis.unsupported .body-angle b{color:#aab3bf}
+.simulator-options{margin-top:17px;border-top:1px solid var(--line);padding-top:14px}
+.simulator-options summary{cursor:pointer;font-size:11px;color:#8292a6;outline-offset:4px}
+.simulator-options summary:focus-visible{outline:3px solid rgba(0,122,255,.43);border-radius:4px}
+.simulator-options .option-hint{font-size:10px;line-height:1.7;color:#96a0ad;margin:10px 0}
+.simulator-check{display:flex;align-items:center;gap:8px;font-size:12px;color:#728197;margin:10px 0;cursor:pointer}
+.simulator-check input{width:15px;height:15px;margin:0;accent-color:var(--blue);cursor:pointer}
+.footer{display:flex;align-items:center;justify-content:space-between;gap:16px;font-size:11px;color:#8794a6;padding:19px 3px 0;line-height:1.6}
+.footer-left{display:flex;align-items:center;gap:8px;min-width:0}
+.footer-left .dot{height:5px;width:5px;background:#a2adbd;box-shadow:none}
+.footer-left .dot.active{background:var(--blue);box-shadow:0 0 0 3px rgba(0,122,255,.08)}
+.footer-right{font-size:9px;letter-spacing:.4px;flex-shrink:0}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+[hidden]{display:none!important}
+.toast-stack{position:fixed;bottom:25px;left:50%;transform:translateX(-50%);z-index:150;display:flex;flex-direction:column;gap:8px;pointer-events:none;width:max-content;max-width:calc(100vw - 32px)}
+.toast{background:rgba(255,255,255,.95);backdrop-filter:blur(22px);-webkit-backdrop-filter:blur(22px);border:1px solid #e6ebf1;box-shadow:0 8px 32px rgba(47,67,101,.13);padding:13px 19px;border-radius:13px;font-size:12px;color:#6a7686;display:flex;align-items:center;gap:9px;animation:toast-in .2s ease-out;line-height:1.5}
+.toast .icon{height:17px;width:17px;color:var(--blue)}
+.toast.warning .icon{color:#c28343}
+@keyframes toast-in{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:translateY(0)}}
+.tooltip{position:fixed;background:rgba(42,51,65,.96);color:#f7f9fc;padding:11px 13px;border-radius:10px;box-shadow:0 5px 22px rgba(32,43,61,.15);font-size:12px;line-height:1.7;width:max-content;max-width:260px;z-index:200;pointer-events:none;backdrop-filter:blur(15px);-webkit-backdrop-filter:blur(15px)}
+.modal-backdrop{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(69,84,108,.17);backdrop-filter:blur(9px);-webkit-backdrop-filter:blur(9px);overflow:auto}
+.dialog{width:490px;max-width:100%;max-height:calc(100dvh - 48px);overflow:auto;background:rgba(255,255,255,.97);border-radius:25px;padding:27px;border:1px solid rgba(255,255,255,.95);box-shadow:0 22px 90px rgba(46,66,98,.16);position:relative}
+.dialog.wide{width:560px}
+.dialog-top{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;margin-bottom:12px}
+.dialog h3{font-size:20px;font-weight:630;letter-spacing:-.4px;margin:0;line-height:1.4}
+.dialog-close{height:28px;width:28px;background:#f1f3f6;border-radius:50%;color:#96a0af;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.dialog-close .icon{width:14px;height:14px}
+.dialog-description{font-size:12px;color:#8b95a4;line-height:1.85;margin:0 0 21px}
+.field{display:flex;flex-direction:column;gap:8px;min-width:0}
+.field label{font-size:11px;color:#798696;display:flex;align-items:center;gap:3px}
+.field input{width:100%;height:42px;border:1px solid #e2e8f0;border-radius:10px;background:#f9fbfd;padding:0 12px;color:#536379;font-size:12px;font-variant-numeric:tabular-nums;transition:border-color .15s}
+.field input:focus{border-color:#88bdff;background:#fff}
+.field input:invalid:not(:placeholder-shown){border-color:#dbaeb0}
+.field-grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.field-grid.three{grid-template-columns:repeat(3,1fr);margin-top:12px}
+.form-caption{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:570;color:#6b7c92;margin-top:22px;margin-bottom:9px}
+.form-caption:first-of-type{margin-top:0}
+.form-help{font-size:10px;color:#9da7b4;line-height:1.7;margin:9px 0 0}
+.architecture{display:flex;align-items:center;justify-content:center;gap:8px;background:#f5f8fc;border-radius:12px;font-size:10px;color:#8a9ab0;padding:15px 8px;margin:18px 0}
+.architecture .icon{width:12px;height:12px;color:#acb9cc}
+.architecture strong{font-weight:500;color:#647e9e}
+.callout{background:#f1f6fd;border:1px solid #e7effa;border-radius:12px;padding:13px 14px;font-size:11px;line-height:1.8;color:#7c91ad;margin-top:17px}
+.callout.warning{background:#fff8ef;border-color:#f6eee2;color:#a18d74}
+.dialog-actions{display:flex;gap:9px;justify-content:flex-end;margin-top:23px;align-items:center}
+.dialog-actions .left-action{margin-right:auto}
+.dialog-actions .link-button{font-size:11px}
+.help-step{display:flex;align-items:flex-start;gap:12px;margin:17px 0}
+.help-number{height:25px;width:25px;background:#edf5ff;color:#6a9bd5;border-radius:9px;display:grid;place-items:center;font-size:11px;font-weight:600;flex-shrink:0}
+.help-step strong{font-size:12px;font-weight:600;color:#69788e}
+.help-step p{font-size:11px;color:#9aa4b2;line-height:1.8;margin:5px 0 0}
+.target-error{font-size:11px;color:#b96466;line-height:1.7;margin-top:12px;min-height:0}
+@media(min-width:1500px){.shell{padding-left:46px;padding-right:46px}.workspace{gap:22px}.stack{gap:22px}.base-card,.head-card{padding-left:25px;padding-right:25px}}
+@media(max-width:1200px){.shell{padding:0 24px 20px}.workspace{grid-template-columns:minmax(211px,.9fr) minmax(350px,1.5fr) minmax(211px,.9fr);gap:14px}.stack{gap:14px}.card{border-radius:20px}.base-card,.lift-card,.head-card,.body-pose-card{padding-left:17px;padding-right:17px}.arm-card{padding-left:19px;padding-right:19px}.intro{gap:12px}.speed-label{display:none}.operation-bar{gap:7px}.primary-button,.stop-button{padding-left:12px;padding-right:12px}.reference{font-size:9px}.pose-tile{padding-left:10px;padding-right:10px}.dpad{grid-template-rows:repeat(3,58px)}}
+@media(max-width:1040px){.workspace{grid-template-columns:minmax(240px,1fr) minmax(350px,1.35fr);gap:18px}.right-stack{grid-column:1/-1;display:grid;grid-template-columns:1fr 1.35fr;gap:18px}.head-card{padding:22px}.head-pad{max-width:245px}.head-readout{float:right;width:85px;display:flex;flex-wrap:wrap;gap:12px;margin-top:8px}.head-glyph{order:-1;width:100%}.head-pad{margin-left:0;margin-right:92px;grid-template-rows:repeat(3,48px)}.head-pad .jog{font-size:9px;flex-direction:column;gap:1px}.head-card .card-header{margin-bottom:17px}.head-card .mini-status{margin-top:12px}.body-pose-card{padding:23px}.intro{align-items:flex-start}.operation-bar{flex-wrap:wrap;justify-content:flex-end;max-width:310px}.speed-block{order:3;margin-top:5px;margin-right:0}.speed-label{display:block}.intro{padding-bottom:17px}.intro .subtitle{max-width:240px}.topbar{height:81px}.demo-banner{margin-bottom:18px}.demo-right{display:none}}
+@media(max-width:680px){.shell{padding:0 16px 18px}.topbar{height:76px;gap:10px}.brand-mark{height:35px;width:35px;border-radius:11px}.brand-name{font-size:13px}.brand-sub{font-size:8px;letter-spacing:1.6px}.brand{gap:9px}.connection{padding:8px;font-size:10px;background:transparent;border:0}.top-actions{gap:2px}.top-button{padding:0 6px}.top-button .button-text,.divider-v{display:none}.intro{display:block;padding:23px 0 16px}.intro .subtitle{max-width:none;font-size:11px}h1{font-size:26px;margin-bottom:8px}.operation-bar{max-width:none;justify-content:flex-start;margin-top:20px;gap:8px}.speed-block{order:0;margin-right:auto;margin-top:0;display:flex;gap:6px}.speed-label{display:none}.speed-options button{font-size:10px;padding:7px 9px}.primary-button,.stop-button{height:39px;padding:0 11px;font-size:11px;border-radius:11px}.stop-button kbd{display:none}.demo-banner{padding:9px 10px;border-radius:10px;margin-bottom:15px}.demo-left{font-size:10px;gap:6px;align-items:flex-start}.demo-left>.icon{margin-top:2px}.demo-label{font-size:9px}.demo-left .demo-explanation{flex:1}.workspace{display:flex;flex-direction:column;gap:16px}.stack{gap:16px}.left-stack{display:grid;grid-template-columns:1.06fr 1fr;gap:13px}.base-card,.lift-card{padding:17px 13px}.base-card .card-subtitle{font-size:10px;margin-bottom:10px}.base-card h2,.lift-card h2{font-size:13px;gap:5px}.base-card h2>.icon,.lift-card h2>.icon{width:16px;height:16px}.base-card .card-header{margin-bottom:15px}.dpad{grid-template-rows:repeat(3,45px);gap:5px}.dpad .jog{font-size:10px;gap:2px;border-radius:9px}.dpad .jog .icon{width:15px;height:15px}.dpad-center .icon{width:23px;height:23px}.dpad-center span{font-size:6px}.mini-status{font-size:8px;margin-top:11px}.measure-line{display:block;margin-top:28px;margin-bottom:13px}.measure{font-size:28px;display:block;margin-bottom:5px}.quiet-label{font-size:9px}.two-buttons{gap:5px}.two-buttons .jog{height:37px;gap:3px;font-size:10px}.two-buttons .icon{height:13px;width:13px}.track-ends{font-size:8px;margin-bottom:13px}.arm-card{padding:21px 20px}.pose-value{font-size:23px}.axis-row{grid-template-columns:42px 1fr 1fr;gap:8px}.reference{font-size:9px}.right-stack{display:grid;grid-template-columns:1fr;gap:16px}.head-card{padding:20px}.head-pad{max-width:230px;margin-right:125px;grid-template-rows:repeat(3,45px)}.head-pad .jog{font-size:10px;flex-direction:row;gap:3px}.head-readout{width:102px;gap:11px;padding-top:15px}.head-glyph{margin-bottom:7px}.head-stat b{font-size:17px}.body-pose-card{padding:20px}.footer{padding-top:17px;font-size:9px;align-items:flex-start}.footer-right{font-size:8px;white-space:nowrap}.dialog{padding:23px 21px;border-radius:22px}.modal-backdrop{padding:17px}.dialog h3{font-size:18px}.dialog-actions .primary-button,.dialog-actions .secondary-button{font-size:11px}.dialog-actions{gap:7px}.field-grid.three{gap:8px}.field input{padding:0 9px}.architecture{font-size:9px;gap:5px}.form-caption{margin-top:17px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important;scroll-behavior:auto!important}}
+
+/* v0.3: speed configuration stays in a single, optional sheet. */
+.speed-settings{height:32px;display:flex;align-items:center;gap:4px;border-radius:9px;padding:0 8px;background:rgba(255,255,255,.75);border:1px solid var(--line);color:#6e7e92;font-size:11px;flex-shrink:0}
+.speed-settings:hover{background:#fff;color:var(--blue)}
+.speed-settings .icon{width:14px;height:14px}
+.dialog.speed-dialog{width:654px;padding:27px 29px}
+.speed-dialog .dialog-description{margin-bottom:15px}
+.speed-sheet{border:1px solid #e8edf4;border-radius:14px;overflow:hidden}
+.speed-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.speed-table th{background:#f6f8fb;color:#7d8ba0;font-size:11px;font-weight:550;padding:11px 10px;text-align:center}
+.speed-table th:first-child{width:37%;text-align:left;padding-left:16px}
+.speed-table td{padding:7px 9px;border-top:1px solid #edf1f6;text-align:center;vertical-align:middle}
+.speed-table td:first-child{text-align:left;padding:9px 14px 9px 16px;font-size:12px;color:#536479}
+.speed-table tr.group-start td{border-top:2px solid #eaf0f7}
+.speed-unit{font-size:10px;color:#9ca7b7;margin-left:6px;white-space:nowrap}
+.speed-table input{width:100%;height:33px;border:1px solid #e2e8f0;border-radius:8px;background:#fafbfd;text-align:center;padding:0 4px;font-size:12px;font-variant-numeric:tabular-nums;color:#455b78;appearance:textfield;-moz-appearance:textfield}
+.speed-table input::-webkit-inner-spin-button,.speed-table input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+.speed-table input:focus{border-color:#80b9fb;background:white}
+.speed-table input[aria-invalid="true"]{border-color:#d77878;background:#fff8f8}
+.speed-brief{display:flex;gap:7px;align-items:flex-start;margin-top:13px;font-size:11px;line-height:1.8;color:#8e9db0}
+.speed-brief .icon{width:14px;height:14px;margin-top:3px;color:#98abc5}
+.speed-dialog .callout{font-size:10px;padding:10px 12px;margin-top:13px}
+.speed-dialog .dialog-actions{margin-top:17px}
+.speed-storage-note{font-size:10px;color:#97a2b3;line-height:1.7;margin:9px 0 0}
+@media(max-width:680px){.operation-bar{flex-wrap:wrap}.speed-block{width:100%;margin-bottom:2px}.speed-label{display:block;font-size:11px}.speed-settings{margin-left:auto}.speed-options button{padding:7px 12px}.dialog.speed-dialog{padding:22px 17px}.speed-table th{padding:10px 3px;font-size:10px}.speed-table th:first-child{width:39%;padding-left:10px}.speed-table td{padding:6px 4px}.speed-table td:first-child{padding:7px 5px 7px 10px;font-size:11px}.speed-unit{display:block;font-size:9px;margin:3px 0 0}.speed-table input{font-size:11px}.speed-dialog .dialog-actions{flex-wrap:wrap}.footer{flex-wrap:wrap;gap:5px}.footer-right{margin-left:13px}}
+</style>
+</head>
+<body>
+<svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-robot" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="4"/><path d="M12 3v4M9 15h6M1.8 11v4M22.2 11v4"/><path d="M8 11v1m8-1v1"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="m6 10 6-6 6 6M12 4v16"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="m6 14 6 6 6-6M12 4v16"/></symbol>
+<symbol id="i-left" viewBox="0 0 24 24"><path d="m10 6-6 6 6 6M4 12h16"/></symbol>
+<symbol id="i-right" viewBox="0 0 24 24"><path d="m14 6 6 6-6 6M4 12h16"/></symbol>
+<symbol id="i-turn-left" viewBox="0 0 24 24"><path d="M4 11a8 8 0 1 1 3 8M4 5v6h6"/></symbol>
+<symbol id="i-turn-right" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-3 8M20 5v6h-6"/></symbol>
+<symbol id="i-head" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="12" rx="4"/><path d="M8 10v2m8-2v2M9 21h6m-3-4v4"/></symbol>
+<symbol id="i-base" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="5"/><path d="m9 11 3-3 3 3m-3-3v8M2 8v3m0 3v3m20-9v3m0 3v3"/></symbol>
+<symbol id="i-lift" viewBox="0 0 24 24"><path d="M6 7V3m0 0L3 6m3-3 3 3m9 11v4m0 0-3-3m3 3 3-3M12 3h6v10M6 11v10h6"/><rect x="9" y="9" width="6" height="6" rx="1.5"/></symbol>
+<symbol id="i-torso" viewBox="0 0 24 24"><path d="M9 4h6m-6 2-4 3 2 6h10l2-6-4-3M8 15v5m8-5v5m-8 0h8M12 7v8"/></symbol>
+<symbol id="i-pitch-forward" viewBox="0 0 24 24"><path d="M5 20h14M12 20v-6l5-7M6 6a8 8 0 0 1 12 1m0-4v4h-4"/><circle cx="18" cy="5" r="1.5"/></symbol>
+<symbol id="i-pitch-backward" viewBox="0 0 24 24"><path d="M5 20h14M12 20v-6L7 7M18 6A8 8 0 0 0 6 7m0-4v4h4"/><circle cx="6" cy="5" r="1.5"/></symbol>
+<symbol id="i-arm" viewBox="0 0 24 24"><path d="M5 20h9M7 20v-5l6-5-3-5m3 5 5-5m0 0 3 2m-3-2 1-3M7 15 4 11l6-6"/><circle cx="10" cy="5" r="1.5"/><circle cx="13" cy="10" r="1.5"/></symbol>
+<symbol id="i-gripper" viewBox="0 0 24 24"><path d="M12 3v5M6 8h12M6 8v8l3 4m9-12v8l-3 4M9 20v-5m6 5v-5"/></symbol>
+<symbol id="i-open" viewBox="0 0 24 24"><path d="M9 4H5v16h4m6-16h4v16h-4M9 12H2m0 0 3-3m-3 3 3 3m10-3h7m0 0-3-3m3 3-3 3"/></symbol>
+<symbol id="i-close-grip" viewBox="0 0 24 24"><path d="M8 4h3v16H8m8-16h-3v16h3M2 12h6m0 0L5 9m3 3-3 3m17-3h-6m0 0 3-3m-3 3 3 3"/></symbol>
+<symbol id="i-move" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18m-12-6 3-3 3 3m-6 12 3 3 3-3M6 9l-3 3 3 3m12-6 3 3-3 3"/></symbol>
+<symbol id="i-rotate" viewBox="0 0 24 24"><path d="M4 10a8 8 0 0 1 14-4l2 2m0-5v5h-5m5 6a8 8 0 0 1-14 4l-2-2m0 5v-5h5"/></symbol>
+<symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 11v5m0-9v.1"/></symbol>
+<symbol id="i-power" viewBox="0 0 24 24"><path d="M12 2v9m-5-6a8 8 0 1 0 10 0"/></symbol>
+<symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="3" fill="currentColor" stroke="none"/></symbol>
+<symbol id="i-wifi" viewBox="0 0 24 24"><path d="M3 8a15 15 0 0 1 18 0M6 12a10 10 0 0 1 12 0m-9 4a5 5 0 0 1 6 0M12 20h.01"/></symbol>
+<symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+<symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9m4 0h3M4 17h3m4 0h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+<symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3 2.5c-.5.2-.5.7-.5 1.5m0 3h.01"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
+<symbol id="i-cross" viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></symbol>
+<symbol id="i-hand" viewBox="0 0 24 24"><path d="M8 13V5a2 2 0 0 1 4 0v6-2a2 2 0 0 1 4 0v2a2 2 0 0 1 4 0v5c0 4-2 6-6 6-3 0-5-2-7-4l-3-4a2 2 0 0 1 3-2l3 3"/></symbol>
+<symbol id="i-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m15.5 8.5-2 5-5 2 2-5z"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6zM8 12l3 3 5-6"/></symbol>
+<symbol id="i-reset" viewBox="0 0 24 24"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6M12 8v5h4"/></symbol>
+<symbol id="i-edit" viewBox="0 0 24 24"><path d="m14 5 5 5M4 20l4-1L20 7a2 2 0 0 0-3-3L5 16z"/></symbol>
+<symbol id="i-forward" viewBox="0 0 24 24"><path d="m8 5 4-3 4 3m-4-3v13M5 13l-3 8h20l-3-8"/></symbol>
+<symbol id="i-backward" viewBox="0 0 24 24"><path d="M12 2v13m-4-4 4 4 4-4M5 13l-3 8h20l-3-8"/></symbol>
+<symbol id="i-tilt-left" viewBox="0 0 24 24"><path d="m8 4 8 16M3 11a8 8 0 0 1 13-6M3 6v5h5"/></symbol>
+<symbol id="i-tilt-right" viewBox="0 0 24 24"><path d="m16 4-8 16M21 11A8 8 0 0 0 8 5m13 1v5h-5"/></symbol>
+</defs></svg>
+<div class="shell">
+  <header class="topbar">
+    <div class="brand"><div class="brand-mark"><svg class="icon"><use href="#i-robot"/></svg></div><div><div class="brand-name">机器人控制台</div><div class="brand-sub">ZK · ROBOT CONSOLE</div></div></div>
+    <div class="top-actions">
+      <div class="connection" role="status"><span class="dot" id="connection-dot"></span><span id="connection-text">模拟器已连接</span></div>
+      <span class="divider-v"></span>
+      <button class="top-button" id="connection-settings" aria-label="连接设置"><svg class="icon"><use href="#i-sliders"/></svg><span class="button-text">连接设置</span></button>
+      <button class="top-button" id="help-button" aria-label="使用帮助"><svg class="icon"><use href="#i-help"/></svg><span class="button-text">使用帮助</span></button>
+    </div>
+  </header>
+  <main>
+    <section class="intro" aria-labelledby="page-title">
+      <div><h1 id="page-title">机器人遥控</h1><p class="subtitle">按住按钮移动，松开即停止。方向以机器人自身为准。</p></div>
+      <div class="operation-bar">
+        <div class="speed-block"><span class="speed-label">操作速度</span><div class="segmented speed-options" role="group" aria-label="操作速度"><button data-speed="slow" aria-pressed="true">低速</button><button data-speed="normal" aria-pressed="false">标准</button><button data-speed="fast" aria-pressed="false">快速</button></div><button id="speed-settings" class="speed-settings" aria-label="设置各档速度" title="设置各部位的低速、标准和快速"><svg class="icon"><use href="#i-sliders"/></svg><span>设置</span></button></div>
+        <button id="enable-button" class="primary-button" aria-pressed="false"><svg class="icon"><use href="#i-power"/></svg><span id="enable-label">启用控制</span></button>
+        <button id="stop-button" class="stop-button" aria-label="软件停止全部模拟动作，不替代实体急停，快捷键 Escape" title="软件停止不能替代实体急停"><svg class="icon"><use href="#i-stop"/></svg>停止全部<kbd>Esc</kbd></button>
+      </div>
+    </section>
+    <div class="demo-banner" role="note"><div class="demo-left"><svg class="icon"><use href="#i-info"/></svg><span class="demo-label">演示模式</span><span class="demo-explanation">所有数据与动作均为本地模拟，不会连接或控制真实机器人。</span></div><div class="demo-right"><svg class="icon"><use href="#i-shield"/></svg>零外部依赖 · 可离线预览</div></div>
+    <div class="workspace">
+      <div class="stack left-stack">
+        <section class="card base-card" aria-labelledby="base-title">
+          <div class="card-header"><h2 id="base-title"><svg class="icon"><use href="#i-base"/></svg>底座移动</h2><button class="hint" data-tip="前进和后退沿机器人朝向移动；左转和右转为原地转向，不是横向平移。按住才移动，松开停止。" aria-label="底座移动说明"><svg class="icon"><use href="#i-info"/></svg></button></div>
+          <p class="card-subtitle">想去哪里，就按住对应方向。</p>
+          <div class="dpad" role="group" aria-label="底座移动方向">
+            <button class="jog base-forward" data-action="base:forward" data-control disabled aria-label="按住使底座前进"><svg class="icon"><use href="#i-up"/></svg><span>前进</span></button>
+            <button class="jog base-left" data-action="base:left" data-control disabled aria-label="按住使底座原地左转"><svg class="icon"><use href="#i-turn-left"/></svg><span>左转</span></button>
+            <div class="dpad-center" aria-hidden="true"><svg class="icon"><use href="#i-base"/></svg><span>机器人</span></div>
+            <button class="jog base-right" data-action="base:right" data-control disabled aria-label="按住使底座原地右转"><svg class="icon"><use href="#i-turn-right"/></svg><span>右转</span></button>
+            <button class="jog base-backward" data-action="base:backward" data-control disabled aria-label="按住使底座后退"><svg class="icon"><use href="#i-down"/></svg><span>后退</span></button>
+          </div>
+          <div class="mini-status"><svg class="icon"><use href="#i-wifi"/></svg><span id="base-status">静止</span><span>·</span><b id="base-speed">0.00 m/s</b></div>
+        </section>
+        <section class="card lift-card" aria-labelledby="lift-title">
+          <div class="card-header"><h2 id="lift-title"><svg class="icon"><use href="#i-lift"/></svg>身体升降</h2><button class="hint" data-tip="显示模拟升降机构的高度，不是机器人总身高。300–700 mm 只是原型演示范围，真机范围必须由控制器报告并限制。" aria-label="身体高度与范围说明"><svg class="icon"><use href="#i-info"/></svg></button></div>
+          <div class="measure-line"><div class="measure"><span id="body-height">480</span><span class="unit">mm</span></div><span class="quiet-label">当前模拟高度</span></div>
+          <div class="track" role="meter" aria-label="模拟身体高度" aria-valuemin="300" aria-valuemax="700" aria-valuenow="480" id="body-meter"><div class="fill" id="body-fill"></div></div>
+          <div class="track-ends"><span>300 mm</span><span>700 mm</span></div>
+          <div class="two-buttons"><button class="jog" data-action="body:down" data-control disabled><svg class="icon"><use href="#i-down"/></svg>下降</button><button class="jog" data-action="body:up" data-control disabled><svg class="icon"><use href="#i-up"/></svg>上升</button></div>
+        </section>
+      </div>
+      <section class="card arm-card" aria-labelledby="arm-title">
+        <div class="card-header"><h2 id="arm-title"><svg class="icon"><use href="#i-arm"/></svg>手臂与夹爪</h2><div class="segmented arm-picker" role="group" aria-label="选择要操作的机械臂"><button data-arm="left" aria-pressed="true">左手</button><button data-arm="right" aria-pressed="false">右手</button></div></div>
+        <div class="feedback-line"><span class="eyebrow" id="readout-label">左手 · 当前末端位置<button class="hint" data-tip="末端是夹爪用来操作物体的参考点（TCP）。左手和右手始终以机器人自身为准，而不是你面对机器人时的左右。" aria-label="末端和左右手说明"><svg class="icon"><use href="#i-info"/></svg></button></span><span class="feedback-chip">模拟反馈</span></div>
+        <div class="pose-readout" id="pose-readout">
+          <div class="pose-tile"><div class="label" id="pose-label-0">前后 <small>X</small></div><div class="pose-value"><span id="pose-0">350</span><small class="pose-unit">mm</small></div></div>
+          <div class="pose-tile"><div class="label" id="pose-label-1">左右 <small>Y</small></div><div class="pose-value"><span id="pose-1">240</span><small class="pose-unit">mm</small></div></div>
+          <div class="pose-tile"><div class="label" id="pose-label-2">高度 <small>Z</small></div><div class="pose-value"><span id="pose-2">680</span><small class="pose-unit">mm</small></div></div>
+        </div>
+        <div class="control-mode"><div class="segmented mode-options" role="group" aria-label="末端控制类型"><button data-mode="position" aria-pressed="true"><svg class="icon"><use href="#i-move"/></svg>移动</button><button data-mode="rotation" aria-pressed="false"><svg class="icon"><use href="#i-rotate"/></svg>转动</button></div><span class="reference">方向：机器人自身<button class="hint" data-tip="本原型使用机器人基座坐标：X 向前，Y 向左，Z 向上。不是相机或屏幕方向。移动时保持姿态；转动时保持末端位置。原型只模拟数据，不计算逆解或碰撞。" aria-label="坐标方向说明"><svg class="icon"><use href="#i-info"/></svg></button></span></div>
+        <div class="axes" id="position-controls" role="group" aria-label="末端位置控制">
+          <div class="axis-row"><span class="axis-name">前后</span><button class="jog axis-button" data-action="arm:x:-1" data-control disabled><svg class="icon"><use href="#i-backward"/></svg>向后</button><button class="jog axis-button" data-action="arm:x:1" data-control disabled><svg class="icon"><use href="#i-forward"/></svg>向前</button></div>
+          <div class="axis-row"><span class="axis-name">左右</span><button class="jog axis-button" data-action="arm:y:1" data-control disabled><svg class="icon"><use href="#i-left"/></svg>向左</button><button class="jog axis-button" data-action="arm:y:-1" data-control disabled><svg class="icon"><use href="#i-right"/></svg>向右</button></div>
+          <div class="axis-row"><span class="axis-name">上下</span><button class="jog axis-button" data-action="arm:z:-1" data-control disabled><svg class="icon"><use href="#i-down"/></svg>下降</button><button class="jog axis-button" data-action="arm:z:1" data-control disabled><svg class="icon"><use href="#i-up"/></svg>抬升</button></div>
+        </div>
+        <div class="axes" id="rotation-controls" role="group" aria-label="末端姿态控制" hidden>
+          <div class="axis-row"><span class="axis-name">俯仰<button class="hint" data-tip="绕机器人 Y 轴转动。在初始演示姿态下，前端下俯为正，上仰为负。不是工具自身轴；姿态变化后以角度反馈为准。" aria-label="俯仰说明"><svg class="icon"><use href="#i-info"/></svg></button></span><button class="jog axis-button" data-action="rotate:y:1" data-control disabled><svg class="icon"><use href="#i-down"/></svg>向下俯</button><button class="jog axis-button" data-action="rotate:y:-1" data-control disabled><svg class="icon"><use href="#i-up"/></svg>向上仰</button></div>
+          <div class="axis-row"><span class="axis-name">转向<button class="hint" data-tip="绕机器人 Z 轴转动，左转为正，右转为负；不是绕工具自身轴。原型仅演示姿态反馈。" aria-label="转向说明"><svg class="icon"><use href="#i-info"/></svg></button></span><button class="jog axis-button" data-action="rotate:z:1" data-control disabled><svg class="icon"><use href="#i-turn-left"/></svg>向左转</button><button class="jog axis-button" data-action="rotate:z:-1" data-control disabled><svg class="icon"><use href="#i-turn-right"/></svg>向右转</button></div>
+          <div class="axis-row"><span class="axis-name">侧倾<button class="hint" data-tip="绕机器人 X 轴转动。在初始演示姿态下，顶部向机器人左侧倾为负，向右侧倾为正。不是工具自身轴。" aria-label="侧倾说明"><svg class="icon"><use href="#i-info"/></svg></button></span><button class="jog axis-button" data-action="rotate:x:-1" data-control disabled><svg class="icon"><use href="#i-tilt-left"/></svg>向左倾</button><button class="jog axis-button" data-action="rotate:x:1" data-control disabled><svg class="icon"><use href="#i-tilt-right"/></svg>向右倾</button></div>
+        </div>
+        <div class="axes-note"><span id="motion-hint">按住连续移动，松开停止</span><button class="link-button" id="precise-button" data-control disabled><svg class="icon"><use href="#i-edit"/></svg>精确定位<svg class="icon"><use href="#i-chevron"/></svg></button></div>
+        <div class="gripper-section">
+          <div class="gripper-heading"><span class="gripper-title"><svg class="icon"><use href="#i-gripper"/></svg>夹爪开合<button class="hint" data-tip="按住张开或闭合以调整模拟开度：0% 为闭合，100% 为张开。开度不代表夹持力，也不能据此判断是否抓稳；真机参数需按夹爪能力适配。" aria-label="夹爪开度说明"><svg class="icon"><use href="#i-info"/></svg></button></span><span class="gripper-value">开度 <b id="gripper-value">65</b> %</span></div>
+          <div class="gripper-controls"><button class="jog" data-action="grip:open" data-control disabled><svg class="icon"><use href="#i-open"/></svg>张开</button><div class="gripper-glyph" aria-hidden="true"><svg viewBox="0 0 48 38"><path d="M24 2v8M15 10h18"/><path id="finger-left" class="finger" d="M17 10v17l4 5v-7"/><path id="finger-right" class="finger" d="M31 10v17l-4 5v-7"/></svg></div><button class="jog" data-action="grip:close" data-control disabled><svg class="icon"><use href="#i-close-grip"/></svg>闭合</button></div>
+          <div class="gripper-footnote" id="gripper-footnote">当前操作左手夹爪 · 按住调整开度</div>
+        </div>
+      </section>
+      <div class="stack right-stack">
+        <section class="card head-card" aria-labelledby="head-title">
+          <div class="card-header"><h2 id="head-title"><svg class="icon"><use href="#i-head"/></svg>头部朝向</h2><button class="hint" data-tip="左看、右看以机器人自身为准。回正会让模拟头部转回水平正前方，与电机回零不同。头部小图只是方向示意，不是摄像头画面。" aria-label="头部控制说明"><svg class="icon"><use href="#i-info"/></svg></button></div>
+          <div class="head-readout"><div class="head-stat">左右<b id="head-yaw">0°</b></div><div class="head-glyph" aria-hidden="true"><div class="head-face" id="head-face"><span class="eye"></span><span class="eye"></span></div></div><div class="head-stat">俯仰<b id="head-pitch">0°</b></div></div>
+          <div class="dpad head-pad" role="group" aria-label="头部移动方向">
+            <button class="jog base-forward" data-action="head:up" data-control disabled><svg class="icon"><use href="#i-up"/></svg>抬头</button>
+            <button class="jog base-left" data-action="head:left" data-control disabled><svg class="icon"><use href="#i-left"/></svg>左看</button>
+            <button class="jog head-neutral" id="head-center" data-control disabled><svg class="icon"><use href="#i-reset"/></svg>回正</button>
+            <button class="jog base-right" data-action="head:right" data-control disabled><svg class="icon"><use href="#i-right"/></svg>右看</button>
+            <button class="jog base-backward" data-action="head:down" data-control disabled><svg class="icon"><use href="#i-down"/></svg>低头</button>
+          </div>
+          <div class="mini-status"><span id="head-status">面向正前方</span></div>
+        </section>
+        <section class="card body-pose-card" aria-labelledby="body-pose-title">
+          <div class="card-header"><h2 id="body-pose-title"><svg class="icon"><use href="#i-torso"/></svg>身体姿态</h2><button class="hint" data-tip="调整上身的俯仰与腰部朝向。身体动作可能带动手臂和头部，不保证夹爪位置不变。本原型各部位读数独立模拟，不计算这种联动。" aria-label="身体姿态与联动说明"><svg class="icon"><use href="#i-info"/></svg></button></div>
+          <div class="body-axis" id="body-pitch-section">
+            <div class="body-axis-heading"><span class="body-axis-label">身体俯仰<button class="hint" data-tip="前倾是上身向前俯，后仰是上身向后仰，不是头部抬头或低头。演示中前倾为正，后仰为负，范围 −20°～30°；真机零位与限位由控制器定义。" aria-label="身体俯仰说明"><svg class="icon"><use href="#i-info"/></svg></button></span><span class="body-angle" aria-label="模拟身体俯仰角度"><b id="body-pitch-value">0</b><span>°</span></span></div>
+            <div class="two-buttons" role="group" aria-label="身体俯仰控制"><button class="jog" data-action="body_pitch:forward" data-control disabled aria-label="按住使身体前倾"><svg class="icon"><use href="#i-pitch-forward"/></svg>前倾</button><button class="jog" data-action="body_pitch:backward" data-control disabled aria-label="按住使身体后仰"><svg class="icon"><use href="#i-pitch-backward"/></svg>后仰</button></div>
+            <p class="feature-note" id="body-pitch-error" role="status" hidden></p>
+          </div>
+          <div class="body-axis" id="waist-yaw-section">
+            <div class="body-axis-heading"><span class="body-axis-label">腰部旋转<button class="hint" data-tip="只转动腰部以上的身体，不是底座原地转向。左右以机器人自身为准；演示中左转为正、右转为负，范围 −90°～90°。身体俯仰方向跟随上身，真机由控制器适配。" aria-label="腰部旋转说明"><svg class="icon"><use href="#i-info"/></svg></button></span><span class="body-angle" aria-label="模拟腰部旋转角度"><b id="waist-yaw-value">0</b><span>°</span></span></div>
+            <div class="two-buttons" role="group" aria-label="腰部旋转控制"><button class="jog" data-action="waist:left" data-control disabled aria-label="按住使腰部向左旋转"><svg class="icon"><use href="#i-turn-left"/></svg>左转</button><button class="jog" data-action="waist:right" data-control disabled aria-label="按住使腰部向右旋转"><svg class="icon"><use href="#i-turn-right"/></svg>右转</button></div>
+            <p class="feature-note" id="waist-yaw-error" role="status" hidden></p>
+          </div>
+        </section>
+      </div>
+    </div>
+  </main>
+  <footer class="footer"><div class="footer-left" role="status" aria-live="polite"><span class="dot" id="activity-dot"></span><span id="status-text">已准备就绪 · 点击「启用控制」开始体验</span></div><div class="footer-right">独立 Web UI · 交互原型 v0.3</div></footer>
+</div>
+<div id="tooltip" class="tooltip" role="tooltip" hidden></div>
+<div id="toast-stack" class="toast-stack" aria-live="polite" aria-atomic="false"></div>
+<div class="modal-backdrop" id="settings-modal" hidden>
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="dialog-top"><h3 id="settings-title">连接设置</h3><button class="dialog-close" data-close aria-label="关闭连接设置"><svg class="icon"><use href="#i-cross"/></svg></button></div>
+    <p class="dialog-description">网页按常规 Web 方式访问控制台后端。<br>由后端通过 TCP 连接机器人控制线程。</p>
+    <form id="connection-form">
+      <div class="field-grid"><div class="field"><label for="robot-host">机器人地址</label><input id="robot-host" type="text" placeholder="例如 192.168.1.100" value="127.0.0.1" maxlength="253" autocomplete="off" spellcheck="false" required></div><div class="field"><label for="robot-port">TCP 端口</label><input id="robot-port" type="number" min="1" max="65535" step="1" value="9000" required></div></div>
+      <p class="form-help">此处是机器人控制程序的监听地址，不是浏览器的访问地址。</p>
+      <div class="architecture"><span>浏览器</span><svg class="icon"><use href="#i-right"/></svg><strong>Web 后端</strong><svg class="icon"><use href="#i-right"/></svg><span>TCP · 机器人线程</span></div>
+      <div class="callout">本页是离线交互原型，尚未实现 Web 后端或 TCP 服务。「保存配置」只保存在当前浏览器，不发起真实连接，也不改变演示模式。</div>
+      <details class="simulator-options" id="simulator-options">
+        <summary>模拟器设置 · 仅用于预览</summary>
+        <p class="option-hint">取消勾选后再操作对应按钮，可体验机器人回复「未实现」时的提示。设置仅影响本页模拟器，刷新后恢复。</p>
+        <label class="simulator-check"><input type="checkbox" id="support-body-pitch" checked>模拟器支持身体俯仰</label>
+        <label class="simulator-check"><input type="checkbox" id="support-waist-yaw" checked>模拟器支持腰部旋转</label>
+      </details>
+      <div class="dialog-actions"><button type="button" class="link-button left-action" id="toggle-simulator">断开模拟器</button><button type="submit" class="primary-button">保存配置</button></div>
+    </form>
+  </section>
+</div>
+
+<div class="modal-backdrop" id="speed-modal" hidden>
+  <section class="dialog speed-dialog" role="dialog" aria-modal="true" aria-labelledby="speed-title">
+    <div class="dialog-top"><div><h3 id="speed-title">速度设置</h3></div><button class="dialog-close" data-close aria-label="关闭速度设置"><svg class="icon"><use href="#i-cross"/></svg></button></div>
+    <p class="dialog-description">每个部位，使用适合它的速度。<br>设置好后，主界面切换档位即可；左右手使用同一组设置。</p>
+    <form id="speed-form" novalidate>
+      <div class="speed-sheet"><table class="speed-table"><thead><tr><th scope="col">控制部位 / 单位</th><th scope="col">低速</th><th scope="col">标准</th><th scope="col">快速</th></tr></thead><tbody id="speed-rows"></tbody></table></div>
+      <div class="speed-brief"><svg class="icon"><use href="#i-info"/></svg><span>数值越大，移动越快。同一行需要满足：低速 ≤ 标准 ≤ 快速。<br>夹爪的 %/s 表示每秒改变的开度百分点，不是夹持力度。</span></div>
+      <div class="callout">这些是模拟用的操作速度，不是真机安全上限。真机接入后仍由控制器检查速度、加速度和机械限位；保存后需要重新启用控制。</div>
+      <p class="target-error" id="speed-error" role="alert" hidden></p>
+      <p class="speed-storage-note" id="speed-storage-note">设置保存在当前浏览器；每次打开仍从低速开始，不会自动启用。</p>
+      <div class="dialog-actions"><button type="button" class="link-button left-action" id="reset-speeds">恢复默认</button><button type="button" class="secondary-button" data-close>取消</button><button type="submit" class="primary-button">保存速度</button></div>
+    </form>
+  </section>
+</div>
+<div class="modal-backdrop" id="help-modal" hidden>
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="help-title">
+    <div class="dialog-top"><h3 id="help-title">使用帮助</h3><button class="dialog-close" data-close aria-label="关闭使用帮助"><svg class="icon"><use href="#i-cross"/></svg></button></div>
+    <p class="dialog-description">不必记住坐标或命令，按部位选择动作即可。速度档右侧的「设置」可以分别修改各部位的速度。</p>
+    <div class="help-step"><span class="help-number">1</span><div><strong>点击「启用控制」</strong><p>原型默认连接本地模拟器。每次断开、停止或切走页面后，需要重新启用。</p></div></div>
+    <div class="help-step"><span class="help-number">2</span><div><strong>按住方向按钮，松开即停</strong><p>控制底座、升降、身体俯仰、腰部旋转、末端、头部和夹爪。方向始终以机器人自身为准。键盘可用 Tab 聚焦按钮，再按住空格或回车。</p></div></div>
+    <div class="help-step"><span class="help-number">3</span><div><strong>左手、右手分别操作</strong><p>「移动」改变夹爪位置；「转动」改变夹爪朝向。需要指定数值时，再打开「精确定位」。</p></div></div>
+    <div class="help-step"><span class="help-number">4</span><div><strong>需要停下，按「停止全部」或 Esc</strong><p>原型会取消动作并关闭控制。重新点击启用后才能继续，不会自动恢复上一次动作。</p></div></div>
+    <div class="callout warning">当前没有真实反馈、运动学求解、碰撞检测或硬件保护。接入真机时，机器人端必须独立实现超时停机、限位、控制权管理和实体急停；网页不能承担安全控制器职责。</div>
+    <div class="dialog-actions"><button class="primary-button" data-close>开始体验</button></div>
+  </section>
+</div>
+<div class="modal-backdrop" id="precise-modal" hidden>
+  <section class="dialog wide" role="dialog" aria-modal="true" aria-labelledby="precise-title">
+    <div class="dialog-top"><h3 id="precise-title">左手 · 精确定位</h3><button class="dialog-close" data-close aria-label="关闭精确定位"><svg class="icon"><use href="#i-cross"/></svg></button></div>
+    <p class="dialog-description">输入末端目标后，点击按钮演示移动。<br>这里是模拟坐标，不是可以直接用于真机的控制参数。</p>
+    <form id="target-form">
+      <div class="form-caption">目标位置 <span class="unit">mm</span><button type="button" class="hint" data-tip="基座坐标系：X 向前、Y 向左、Z 向上。原型限制 X 100–650、Y −600–600、Z 300–1050 mm，仅用于演示，不能判断实际可达性。" aria-label="位置坐标说明"><svg class="icon"><use href="#i-info"/></svg></button></div>
+      <div class="field-grid three"><div class="field"><label for="target-x">前后 · X</label><input id="target-x" type="number" min="100" max="650" step="0.1" required></div><div class="field"><label for="target-y">左右 · Y</label><input id="target-y" type="number" min="-600" max="600" step="0.1" required></div><div class="field"><label for="target-z">高度 · Z</label><input id="target-z" type="number" min="300" max="1050" step="0.1" required></div></div>
+      <div class="form-caption">目标姿态 <span class="unit">°</span><button type="button" class="hint" data-tip="使用 Roll、Pitch、Yaw 显示和输入；旋转定义为 R = Rz(Yaw) · Ry(Pitch) · Rx(Roll)，内部用四元数模拟。俯仰接近 ±90° 时，欧拉角显示存在奇异性，不能用于真实伺服控制。" aria-label="姿态与旋转顺序说明"><svg class="icon"><use href="#i-info"/></svg></button></div>
+      <div class="field-grid three"><div class="field"><label for="target-roll">侧倾 · Roll</label><input id="target-roll" type="number" min="-180" max="180" step="0.1" required></div><div class="field"><label for="target-pitch">俯仰 · Pitch</label><input id="target-pitch" type="number" min="-89" max="89" step="0.1" required></div><div class="field"><label for="target-yaw">转向 · Yaw</label><input id="target-yaw" type="number" min="-180" max="180" step="0.1" required></div></div>
+      <p class="form-help">这是一次性目标动作，与“按住移动”不同。点击「停止全部」可中途取消。</p>
+      <div class="callout warning">仅演示数值插值，不计算逆解、避障或真机轨迹；提交不代表该目标在真实机器人上安全可达。</div>
+      <p id="target-error" class="target-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-close>取消</button><button type="submit" class="primary-button" data-control disabled>移动到目标（模拟）</button></div>
+    </form>
+  </section>
+</div>
+<div class="modal-backdrop" id="head-modal" hidden>
+  <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="head-confirm-title">
+    <div class="dialog-top"><h3 id="head-confirm-title">让头部回到正前方？</h3><button class="dialog-close" data-close aria-label="取消头部回正"><svg class="icon"><use href="#i-cross"/></svg></button></div>
+    <p class="dialog-description">模拟头部将缓慢回到左右 0°、俯仰 0°。<br>这是朝向复位，不是电机回零；过程中可以随时停止。</p>
+    <div class="dialog-actions"><button class="secondary-button" data-close>取消</button><button class="primary-button" id="confirm-head-center" data-control disabled>确认回正（模拟）</button></div>
+  </section>
+</div>
+<script>
+'use strict';
+/*
+ * Standalone UI prototype, not a robot controller.
+ * There is deliberately no fetch(), WebSocket, raw TCP or real hardware call.
+ * This simulator does not implement IK, collision checking, CAN, servo loops or a
+ * hardware safety function. Keep those responsibilities in the robot controller.
+ * Future boundary: Browser -> conventional Web backend -> framed TCP -> robot thread.
+ * Never infer real connectivity or successful execution from these local values.
+ */
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const all = (selector) => [...document.querySelectorAll(selector)];
+  const clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
+  const deg = Math.PI / 180;
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const profileNames = {slow:'低速', normal:'标准', fast:'快速'};
+  // Display units only. The outgoing robot protocol always uses m, rad and ratio.
+  const speedFields = [
+    {key:'base_linear',label:'底座前进 / 后退',unit:'m/s',step:.01,min:.01,max:2,values:[.15,.30,.45]},
+    {key:'base_angular',label:'底座原地转向',unit:'°/s',step:1,min:1,max:180,values:[15,30,45]},
+    {key:'body_lift',label:'身体升降',unit:'mm/s',step:1,min:1,max:300,values:[35,70,105],group:true},
+    {key:'body_pitch',label:'身体俯仰',unit:'°/s',step:1,min:1,max:90,values:[8,16,24]},
+    {key:'waist_yaw',label:'腰部旋转',unit:'°/s',step:1,min:1,max:180,values:[15,30,45]},
+    {key:'arm_linear',label:'末端移动',unit:'mm/s',step:1,min:1,max:500,values:[40,80,120],group:true},
+    {key:'arm_angular',label:'末端转动',unit:'°/s',step:1,min:1,max:180,values:[18,36,54]},
+    {key:'head_angular',label:'头部转动 / 回正',unit:'°/s',step:1,min:1,max:120,values:[18,36,54],group:true},
+    {key:'gripper',label:'夹爪开合',unit:'%/s',step:1,min:1,max:100,values:[30,60,90]}
+  ];
+  const defaultProfiles = Object.fromEntries(Object.keys(profileNames).map((name,i) => [name,Object.fromEntries(speedFields.map(f=>[f.key,f.values[i]]))]));
+  const speedStorageKey = 'robot-console-preview.speed-profiles.v1.mock-robot';
+  let speedProfiles = clone(defaultProfiles), storageWarning = '';
+  function profileValidation(candidate) {
+    for (const f of speedFields) {
+      for (const name of Object.keys(profileNames)) {
+        const value=candidate?.[name]?.[f.key];
+        if (typeof value!=='number' || !Number.isFinite(value) || value<f.min || value>f.max || Math.abs(value/f.step-Math.round(value/f.step))>1e-6)
+          return {key:f.key, profile:name, msg:`${f.label} · ${profileNames[name]}：请输入 ${f.min}–${f.max} ${f.unit} 之间、步长为 ${f.step} 的数值。`};
+      }
+      if(candidate.slow[f.key]>candidate.normal[f.key] || candidate.normal[f.key]>candidate.fast[f.key])
+        return {key:f.key,profile:'normal',msg:`${f.label}：请保持低速 ≤ 标准 ≤ 快速。`};
+    }
+    return null;
+  }
+  try {
+    const raw = localStorage.getItem(speedStorageKey);
+    if(raw) {
+      const saved=JSON.parse(raw);
+      if(saved.version!==1 || profileValidation(saved.profiles)) throw new Error('Invalid saved profiles');
+      speedProfiles=Object.fromEntries(Object.keys(profileNames).map(name=>[name,Object.fromEntries(speedFields.map(f=>[f.key,saved.profiles[name][f.key]]))]));
+    }
+  } catch { storageWarning='未能读取已保存设置，已使用默认速度。当前浏览器可能限制本地存储。'; }
+  function speeds() { return speedProfiles[state.speed]; }
+  const uniqueId = prefix => `${prefix}-${globalThis.crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`}`;
+
+  const state = {
+    connected: true, enabled: false, speed: 'slow', arm: 'left', mode: 'position',
+    body: 480, bodyPitch: 0, waistYaw: 0, head: {yaw: 0, pitch: 0}, base: {v: 0, w: 0},
+    arms: {left: {p: [350,240,680], q: [0,0,0,1], grip:65}, right: {p: [350,-240,680], q: [0,0,0,1], grip:65}},
+    jog: null, target: null, frameTime: null, status: '已准备就绪 · 点击「启用控制」开始体验'
+  };
+  // ZRCP/1 envelope and numerical velocity examples, matching the complete v1.0 draft.
+  // Demo IDs and deadlines are local. No TCP, clock sync, or real watchdog exists here.
+  const protocolVersion = 1;
+  const simulatedSupport = { 'body.pitch': true, 'waist.yaw': true };
+  const optionalFeatures = {
+    'body.pitch': { name: '身体俯仰', noteId: 'body-pitch-error', sectionId: 'body-pitch-section', valueId: 'body-pitch-value' },
+    'waist.yaw': { name: '腰部旋转', noteId: 'waist-yaw-error', sectionId: 'waist-yaw-section', valueId: 'waist-yaw-value' }
+  };
+  let requestSequence = 0;
+  const demoSession = uniqueId('demo-session');
+  let demoLease = null;
+  const protocolDebug = { lastRequest:null, lastResponse:null, lastMotionRequest:null, history:[] };
+  // Shape/units demonstration only. This is not a transport, authentication,
+  // multi-client arbitrator, or independent robot-side watchdog implementation.
+  Object.defineProperty(window, 'robotConsoleDemo', { value:Object.freeze({
+    get lastRequest(){return clone(protocolDebug.lastRequest);},
+    get lastResponse(){return clone(protocolDebug.lastResponse);},
+    get lastMotionRequest(){return clone(protocolDebug.lastMotionRequest);},
+    get history(){return clone(protocolDebug.history);},
+    get speedProfiles(){return clone(speedProfiles);},
+    get protocolVersion(){return protocolVersion;}
+  }) });
+  function requestFor(command,params={}) {
+    return {v:protocolVersion,type:'command',id:`demo-${++requestSequence}`,session_id:demoSession,command,params};
+  }
+  function motionParams() {
+    return {lease_id:demoLease,motion_id:uniqueId('motion'),seq:1,deadline_ms:Math.floor(performance.now()+300)};
+  }
+  function record(request,response) {
+    protocolDebug.lastRequest=request; protocolDebug.lastResponse=response;
+    if(request.command.endsWith('.jog') || ['arm.move_to','head.center'].includes(request.command))protocolDebug.lastMotionRequest=request;
+    protocolDebug.history.push({request,response});
+    if(protocolDebug.history.length>200)protocolDebug.history.shift();
+  }
+  function exchange(command,params={}) {
+    const request=requestFor(command,params),response=simulatedRobotReply(request);record(request,response);return {request,response};
+  }
+  function stopActiveProtocol() {
+    const active=state.jog||state.target;
+    if(active?.motionId)exchange('motion.stop',{lease_id:demoLease,motion_id:active.motionId});
+  }
+  function renewActiveProtocol(active,dt) {
+    active.renewElapsed=(active.renewElapsed||0)+dt;
+    if(active.renewElapsed>=.1){
+      active.renewElapsed=0;
+      exchange('motion.keepalive',{lease_id:demoLease,motion_id:active.motionId,seq:++active.seq,deadline_ms:Math.floor(performance.now()+300)});
+    }
+  }
+  const positionLimits = [[100,650],[-600,600],[300,1050]];
+  const names = {left:'左手',right:'右手'};
+  let currentModal = null, previousFocus = null, tooltipOwner = null;
+  let lastRender = 0;
+
+  function icon(name) { return `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
+  function toast(message, warning = false) {
+    const item = document.createElement('div');
+    item.className = 'toast' + (warning ? ' warning' : '');
+    item.innerHTML = icon(warning ? 'info' : 'check');
+    const text = document.createElement('span'); text.textContent = message; item.append(text);
+    $('toast-stack').append(item);
+    while ($('toast-stack').children.length > 2) $('toast-stack').firstElementChild.remove();
+    setTimeout(() => item.remove(), 3600);
+  }
+  function status(message) { state.status = message; $('status-text').textContent = message; }
+  function setEnabled(value, message) {
+    const next=Boolean(value && state.connected);
+    if(next && !state.enabled){
+      const pair=exchange('control.acquire',{deadline_ms:Math.floor(performance.now()+300)});
+      demoLease=pair.response.data.lease_id;
+      exchange('control.enable',{lease_id:demoLease,deadline_ms:Math.floor(performance.now()+300)});
+    } else if(!next && state.enabled){
+      exchange('motion.stop_all',{}); demoLease=null;
+    }
+    state.enabled = next;
+    if (!state.enabled) stopMotion();
+    $('enable-button').classList.toggle('enabled', state.enabled);
+    $('enable-button').setAttribute('aria-pressed', String(state.enabled));
+    $('enable-label').textContent = state.enabled ? '控制已启用' : '启用控制';
+    $('enable-button').disabled = !state.connected;
+    all('[data-control]').forEach(button => button.disabled = !state.enabled);
+    if (message) status(message);
+    render(true);
+  }
+  function stopMotion() {
+    if(demoLease)stopActiveProtocol();
+    state.jog = null; state.target = null; state.base.v = 0; state.base.w = 0;
+    all('.pressing').forEach(button => button.classList.remove('pressing'));
+    render(true);
+  }
+  function stopAll(message = '已停止全部动作 · 重新启用后可继续', showToast = true) {
+    setEnabled(false, message);
+    if (showToast) toast(message);
+  }
+  function canControl() {
+    if (!state.connected) {toast('模拟器已断开，请在连接设置中重新连接。',true);return false;}
+    if (!state.enabled) {toast('请先点击顶部「启用控制」。',true);return false;}
+    return true;
+  }
+  function labelFor(action, arm) {
+    const map = {
+      'base:forward':'底座前进','base:backward':'底座后退','base:left':'底座原地左转','base:right':'底座原地右转',
+      'body:up':'身体上升','body:down':'身体下降',
+      'body_pitch:forward':'身体前倾','body_pitch:backward':'身体后仰','waist:left':'腰部左转','waist:right':'腰部右转','head:up':'头部抬头','head:down':'头部低头','head:left':'头部左看','head:right':'头部右看',
+      'grip:open':`${names[arm]}夹爪张开`,'grip:close':`${names[arm]}夹爪闭合`,
+      'arm:x:1':`${names[arm]}向前移动`,'arm:x:-1':`${names[arm]}向后移动`,
+      'arm:y:1':`${names[arm]}向左移动`,'arm:y:-1':`${names[arm]}向右移动`,
+      'arm:z:1':`${names[arm]}抬升`,'arm:z:-1':`${names[arm]}下降`,
+      'rotate:x:1':`${names[arm]}向右倾`,'rotate:x:-1':`${names[arm]}向左倾`,
+      'rotate:y:1':`${names[arm]}向下俯`,'rotate:y:-1':`${names[arm]}向上仰`,
+      'rotate:z:1':`${names[arm]}向左转`,'rotate:z:-1':`${names[arm]}向右转`
+    };
+    return map[action] || '模拟移动';
+  }
+  function makeJogRequest(action) {
+    const [type,direction,signText]=action.split(':'), sign=Number(signText),p=speeds();
+    const commands={base:'base.jog',body:'body.lift.jog',body_pitch:'body.pitch.jog',waist:'waist.yaw.jog',arm:'arm.position.jog',rotate:'arm.rotation.jog',head:'head.jog',grip:'gripper.jog'};
+    const params=motionParams();
+    if(type==='base'){
+      params.linear_mps=direction==='forward'?p.base_linear:direction==='backward'?-p.base_linear:0;
+      params.angular_radps=direction==='left'?p.base_angular*deg:direction==='right'?-p.base_angular*deg:0;
+    } else if(type==='body')params.velocity_mps=(direction==='up'?1:-1)*p.body_lift/1000;
+    else if(type==='body_pitch')params.velocity_radps=(direction==='forward'?1:-1)*p.body_pitch*deg;
+    else if(type==='waist')params.velocity_radps=(direction==='left'?1:-1)*p.waist_yaw*deg;
+    else if(type==='arm'||type==='rotate'){
+      params.arm=state.arm;params.frame='base';params.axis=direction;
+      params[type==='arm'?'velocity_mps':'velocity_radps']=sign*(type==='arm'?p.arm_linear/1000:p.arm_angular*deg);
+    } else if(type==='head'){
+      params.axis=['left','right'].includes(direction)?'yaw':'pitch';
+      params.velocity_radps=(['left','up'].includes(direction)?1:-1)*p.head_angular*deg;
+    } else if(type==='grip'){
+      params.arm=state.arm;params.velocity_ratio_per_s=(direction==='open'?1:-1)*p.gripper/100;
+    }
+    return requestFor(commands[type],params);
+  }
+  function featureFor(command) {
+    if (command === 'body.pitch.jog') return 'body.pitch';
+    if (command === 'waist.yaw.jog') return 'waist.yaw';
+    return null;
+  }
+  function simulatedRobotReply(request) {
+    const feature = featureFor(request.command);
+    const response = { v:protocolVersion,type:'response',id:request.id,session_id:demoSession,command:request.command,robot_time_ms:Math.floor(performance.now()) };
+    if (feature && !simulatedSupport[feature]) {
+      return { ...response,ok:false,code:'NOT_IMPLEMENTED',msg:`当前机器人未实现${optionalFeatures[feature].name}功能。`,data:{} };
+    }
+    let data={};
+    if(request.command==='control.acquire')data={lease_id:uniqueId('demo-lease'),lease_expires_ms:Math.floor(performance.now()+1000)};
+    else if(request.command==='control.enable')data={enabled:true};
+    else if(request.command==='motion.stop_all')data={stop_requested:true,enabled:false};
+    else if(request.command==='motion.stop')data={motion_id:request.params.motion_id,stop_requested:true};
+    else if(request.params.motion_id)data={motion_id:request.params.motion_id,phase:request.command==='motion.keepalive'?'running':'accepted'};
+    return {...response,ok:true,code:'OK',msg:'模拟器已接受请求；不代表真实机器人已执行。',data};
+  }
+  function clearFeatureNotice(feature) {
+    if (!optionalFeatures[feature]) return;
+    const config = optionalFeatures[feature];
+    $(config.noteId).textContent = ''; $(config.noteId).hidden = true;
+    $(config.sectionId).classList.remove('unsupported');
+  }
+  function applyCommandResponse(request, response) {
+    // The UI branches on a stable code, never on translated msg text.
+    if (!response || response.v !== protocolVersion || response.type !== 'response' ||
+        response.id !== request.id || response.session_id !== request.session_id || response.command !== request.command ||
+        typeof response.ok !== 'boolean' || typeof response.code !== 'string' ||
+        typeof response.msg !== 'string') {
+      status('指令回复无效 · 未开始动作（模拟）');
+      toast('无法确认机器人回复，本次动作未开始。', true); return false;
+    }
+    const feature = featureFor(request.command);
+    if (response.ok === true && response.code === 'OK') {
+      if (feature) clearFeatureNotice(feature);
+      return true;
+    }
+    const message = response.msg.trim() || (response.code === 'NOT_IMPLEMENTED' ? '当前机器人未实现此功能。' : '本次操作未执行。');
+    // textContent is intentional: a remote msg is untrusted text, not HTML.
+    if (feature) {
+      const config = optionalFeatures[feature];
+      $(config.noteId).textContent = message;
+      $(config.noteId).hidden = false;
+      $(config.sectionId).classList.toggle('unsupported', response.code === 'NOT_IMPLEMENTED');
+    }
+    status(`${message} · 本次动作未开始`);
+    toast(message, true);
+    render(true);
+    return false;
+  }
+  function admitSimulatedJog(action) {
+    const request = makeJogRequest(action), response = simulatedRobotReply(request);
+    record(request,response);
+    return applyCommandResponse(request,response)?request:null;
+  }
+  function startJog(button, pointerId = null, key = null) {
+    if (currentModal || !canControl() || state.jog) return;
+    hideTooltip();
+    if (state.target) { stopMotion(); toast('已取消目标移动，切换为按住操作。'); }
+    // Do not start visual motion before the mock controller has accepted it.
+    // A NOT_IMPLEMENTED response leaves the button available for later retries.
+    const request=admitSimulatedJog(button.dataset.action);
+    if(!request)return;
+    state.jog = {action:button.dataset.action,button,pointerId,key,arm:state.arm,motionId:request.params.motion_id,seq:1,renewElapsed:0};
+    button.classList.add('pressing');
+    status(`${labelFor(state.jog.action,state.jog.arm)}中 · 松开停止（模拟）`);
+    render(true);
+  }
+  function stopJog(button = null) {
+    if (!state.jog || (button && state.jog.button !== button)) return;
+    stopActiveProtocol();
+    const label = labelFor(state.jog.action, state.jog.arm);
+    state.jog.button.classList.remove('pressing'); state.jog = null;
+    state.base.v = 0; state.base.w = 0;
+    status(`${label}已停止 · 控制仍启用（模拟）`);
+    render(true);
+  }
+  all('[data-action]').forEach(button => {
+    button.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || !event.isPrimary || state.jog || button.disabled) return;
+      event.preventDefault(); button.focus({preventScroll:true});
+      startJog(button,event.pointerId);
+      if (state.jog?.button === button) { try {button.setPointerCapture(event.pointerId);} catch {} }
+    });
+    button.addEventListener('pointerup', event => { if (state.jog?.pointerId === event.pointerId) stopJog(button); });
+    button.addEventListener('pointercancel', () => stopJog(button));
+    button.addEventListener('lostpointercapture', () => stopJog(button));
+    button.addEventListener('keydown', event => {
+      if (event.key !== ' ' && event.key !== 'Enter') return;
+      event.preventDefault();
+      if (!event.repeat && !state.jog) startJog(button,null,event.key);
+    });
+    button.addEventListener('keyup', event => {
+      if (event.key === ' ' || event.key === 'Enter') {event.preventDefault();stopJog(button);}
+    });
+    button.addEventListener('blur', () => stopJog(button));
+    button.addEventListener('contextmenu', event => event.preventDefault());
+    // A synthetic click is not interpreted as a held command: an explicit press
+    // and release is needed, including for keyboard interaction.
+  });
+  window.addEventListener('pointerup',event => {
+    if (state.jog?.pointerId === event.pointerId) stopJog();
+  });
+  window.addEventListener('keyup',event => {
+    if (state.jog?.key === event.key) stopJog();
+  });
+  function leavePage() {
+    if (state.enabled || state.jog || state.target) stopAll('页面已离开焦点 · 动作已停止，需重新启用',false);
+  }
+  window.addEventListener('blur',leavePage);
+  window.addEventListener('pagehide',leavePage);
+  document.addEventListener('visibilitychange',() => {if(document.hidden) leavePage();});
+  document.addEventListener('keydown',event => {
+    if (event.key === 'Escape') {
+      event.preventDefault(); hideTooltip(); closeModal();
+      stopAll();
+    }
+    if (event.key === 'Tab' && currentModal) {
+      const focusable = [...currentModal.querySelectorAll('button:not(:disabled),input:not(:disabled),summary,[tabindex="0"]')].filter(el=>!el.hidden && el.getClientRects().length > 0);
+      if (!focusable.length) return;
+      const first = focusable[0], last = focusable[focusable.length-1];
+      if (event.shiftKey && document.activeElement === first) {event.preventDefault();last.focus();}
+      else if (!event.shiftKey && document.activeElement === last) {event.preventDefault();first.focus();}
+    }
+  });
+  $('enable-button').addEventListener('click',() => {
+    if (state.enabled) stopAll('控制已关闭 · 所有模拟动作已停止');
+    else {setEnabled(true,'控制已启用 · 按住任一方向按钮试试（模拟）');toast('控制已启用。按住移动，松开停止。');}
+  });
+  $('stop-button').addEventListener('click',() => stopAll());
+  all('[data-speed]').forEach(button => button.addEventListener('click',() => {
+    stopMotion(); state.speed = button.dataset.speed;
+    all('[data-speed]').forEach(el=>el.setAttribute('aria-pressed',String(el===button)));
+    status(`已切换为${profileNames[state.speed]} · ${state.enabled?'可以继续操作':'尚未启用控制'}（模拟）`);
+  }));
+  all('[data-arm]').forEach(button => button.addEventListener('click',() => {
+    stopMotion(); state.arm = button.dataset.arm;
+    all('[data-arm]').forEach(el=>el.setAttribute('aria-pressed',String(el===button)));
+    updateMode();
+    status(`已选择机器人${names[state.arm]} · ${state.enabled?'可以继续操作':'尚未启用控制'}（模拟）`);
+  }));
+  all('[data-mode]').forEach(button => button.addEventListener('click',() => {
+    stopMotion();state.mode = button.dataset.mode;updateMode();
+    status(`已切换为${state.mode==='position'?'末端移动':'末端转动'} · ${state.enabled?'可以继续操作':'尚未启用控制'}（模拟）`);
+  }));
+  function updateMode() {
+    const rotation = state.mode==='rotation';
+    all('[data-mode]').forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.mode===state.mode)));
+    $('position-controls').hidden = rotation; $('rotation-controls').hidden = !rotation;
+    $('readout-label').firstChild.textContent = `${names[state.arm]} · 当前末端${rotation?'姿态':'位置'}`;
+    const labels = rotation ? ['侧倾 <small>Roll</small>','俯仰 <small>Pitch</small>','转向 <small>Yaw</small>'] : ['前后 <small>X</small>','左右 <small>Y</small>','高度 <small>Z</small>'];
+    labels.forEach((label,i)=>$(`pose-label-${i}`).innerHTML=label);
+    all('.pose-unit').forEach(el=>el.textContent=rotation?'°':'mm');
+    $('motion-hint').textContent = rotation?'按住连续转动，末端位置保持不变':'按住连续移动，松开停止';
+    $('gripper-footnote').textContent=`当前操作${names[state.arm]}夹爪 · 按住调整开度`;
+    render(true);
+  }
+  function openModal(id) {
+    const wasMoving = Boolean(state.jog || state.target);
+    stopMotion(); hideTooltip();
+    if (wasMoving) status('打开设置或弹窗 · 当前模拟动作已取消');
+    previousFocus = document.activeElement;
+    currentModal=$(id);currentModal.hidden=false;
+    document.querySelector('.shell').inert=true;
+    document.body.style.overflow='hidden';
+    const first = currentModal.querySelector('button:not(:disabled),input');
+    requestAnimationFrame(()=>first?.focus());
+  }
+  function closeModal() {
+    if(!currentModal) return;
+    hideTooltip();currentModal.hidden=true;currentModal=null;
+    document.querySelector('.shell').inert=false;
+    document.body.style.overflow='';
+    previousFocus?.focus?.({preventScroll:true});previousFocus=null;
+  }
+  all('[data-close]').forEach(button=>button.addEventListener('click',closeModal));
+  all('.modal-backdrop').forEach(backdrop=>backdrop.addEventListener('click',event=>{if(event.target===backdrop)closeModal();}));
+  $('connection-settings').addEventListener('click',()=>openModal('settings-modal'));
+  $('help-button').addEventListener('click',()=>openModal('help-modal'));
+
+  function fillSpeedForm(profiles) {
+    $('speed-rows').innerHTML=speedFields.map(f=>`<tr${f.group?' class="group-start"':''}><td>${f.label}<span class="speed-unit">${f.unit}</span></td>${Object.keys(profileNames).map(name=>`<td><input id="speed-${name}-${f.key}" type="number" inputmode="decimal" min="${f.min}" max="${f.max}" step="${f.step}" value="${profiles[name][f.key]}" required aria-label="${f.label} ${profileNames[name]} ${f.unit}" title="${f.min}–${f.max} ${f.unit}（原型输入范围，不是真机限速）"></td>`).join('')}</tr>`).join('');
+    $('speed-error').hidden=true;
+  }
+  function readSpeedForm() {
+    return Object.fromEntries(Object.keys(profileNames).map(name=>[name,Object.fromEntries(speedFields.map(f=>{
+      const text=$(`speed-${name}-${f.key}`).value.trim();return [f.key,text===''?NaN:Number(text)];
+    }))]));
+  }
+  function refreshSpeedTitles() {
+    all('[data-speed]').forEach(button=>{
+      const p=speedProfiles[button.dataset.speed];
+      button.title=`${profileNames[button.dataset.speed]}：底座 ${p.base_linear} m/s · 末端 ${p.arm_linear} mm/s · 转动 ${p.arm_angular} °/s。其他部位可在设置中查看。`;
+    });
+  }
+  $('speed-settings').addEventListener('click',()=>{
+    stopAll('正在设置速度 · 控制已关闭，保存后请重新启用',false);
+    fillSpeedForm(speedProfiles);
+    $('speed-storage-note').textContent=storageWarning||'设置保存在当前浏览器；每次打开仍从低速开始，不会自动启用。';
+    openModal('speed-modal');
+  });
+  $('reset-speeds').addEventListener('click',()=>{
+    fillSpeedForm(defaultProfiles);
+    $('speed-storage-note').textContent='已填入默认值；点击「保存速度」才会生效，取消则保留原设置。';
+  });
+  $('speed-form').addEventListener('submit',event=>{
+    event.preventDefault();
+    all('#speed-rows input').forEach(input=>input.removeAttribute('aria-invalid'));
+    const candidate=readSpeedForm(),error=profileValidation(candidate);
+    if(error){
+      $('speed-error').textContent=error.msg;$('speed-error').hidden=false;
+      const input=$(`speed-${error.profile}-${error.key}`);input.setAttribute('aria-invalid','true');input.focus();return;
+    }
+    speedProfiles=candidate;
+    let saved=true;
+    try{localStorage.setItem(speedStorageKey,JSON.stringify({version:1,profiles:speedProfiles}));storageWarning='';}
+    catch{saved=false;storageWarning='浏览器不允许保存；本次修改仅在当前页面有效，刷新后可能丢失。';}
+    refreshSpeedTitles();closeModal();
+    status('速度已更新 · 请重新启用控制后操作（模拟）');
+    toast(saved?'速度已保存。各档将使用新的数值，请重新启用控制。':storageWarning,!saved);
+  });
+  refreshSpeedTitles();
+
+  [['support-body-pitch','body.pitch'],['support-waist-yaw','waist.yaw']].forEach(([id,feature]) => {
+    $(id).addEventListener('change', () => {
+      stopMotion(); simulatedSupport[feature] = $(id).checked;
+      clearFeatureNotice(feature); render(true);
+      status('模拟器配置已更新 · 仅影响演示，不会连接真机');
+    });
+  });
+  $('connection-form').addEventListener('submit',event=>{
+    event.preventDefault();
+    const host=$('robot-host').value.trim(),port=Number($('robot-port').value);
+    // Accept a hostname, IPv4 or an IPv6 literal; the production backend must
+    // enforce authentication, allowed destinations, and complete address validation.
+    if(!host || !/^[a-zA-Z0-9.:[\]-]+$/.test(host) || !Number.isInteger(port) || port<1 || port>65535){
+      toast('请输入有效的主机地址和 1–65535 之间的端口。',true);return;
+    }
+    let saved=true;
+    try{localStorage.setItem('robot-console-preview.connection',JSON.stringify({host,port}));}catch{saved=false;}
+    closeModal();
+    toast(saved?'配置已保存在浏览器中；仍使用模拟器，未发起真实连接。':'当前浏览器不允许本地存储，配置仅保留在本页。',!saved);
+    status('已编辑机器人地址 · 未连接真机，仅模拟演示');
+  });
+  try {
+    const saved=JSON.parse(localStorage.getItem('robot-console-preview.connection')||'null');
+    if(saved && typeof saved.host==='string' && Number.isInteger(saved.port) && saved.port>0 && saved.port<=65535){$('robot-host').value=saved.host;$('robot-port').value=saved.port;}
+  } catch {}
+  $('toggle-simulator').addEventListener('click',()=>{
+    state.connected=!state.connected;
+    Object.keys(optionalFeatures).forEach(clearFeatureNotice);
+    setEnabled(false,state.connected?'模拟器已重新连接 · 请重新启用控制':'模拟器已断开 · 所有动作已停止');
+    $('connection-text').textContent=state.connected?'模拟器已连接':'模拟器已断开';
+    $('connection-dot').classList.toggle('off',!state.connected);
+    $('toggle-simulator').textContent=state.connected?'断开模拟器':'连接模拟器';
+    closeModal();toast(state.connected?'已连接模拟器，不会自动恢复控制。':'模拟器已断开，控制已关闭。');
+  });
+  $('precise-button').addEventListener('click',()=>{
+    if(!canControl())return;
+    const arm=state.arms[state.arm],euler=qToEuler(arm.q);
+    $('precise-title').textContent=`${names[state.arm]} · 精确定位`;
+    ['x','y','z'].forEach((axis,i)=>$(`target-${axis}`).value=arm.p[i].toFixed(1));
+    ['roll','pitch','yaw'].forEach((axis,i)=>$(`target-${axis}`).value=euler[i].toFixed(1));
+    $('target-error').hidden=true;openModal('precise-modal');
+  });
+  $('target-form').addEventListener('submit',event=>{
+    event.preventDefault();if(!canControl())return;
+    const p=['x','y','z'].map(axis=>Number($(`target-${axis}`).value));
+    const e=['roll','pitch','yaw'].map(axis=>Number($(`target-${axis}`).value));
+    if([...p,...e].some(v=>!Number.isFinite(v)) || p.some((v,i)=>v<positionLimits[i][0]||v>positionLimits[i][1]) || Math.abs(e[0])>180 || Math.abs(e[1])>89 || Math.abs(e[2])>180){
+      $('target-error').textContent='请检查输入数值；目标超出本原型的演示范围。';$('target-error').hidden=false;return;
+    }
+    const arm=state.arms[state.arm];
+    const distance=Math.hypot(...p.map((v,i)=>v-arm.p[i]));
+    const toQ=eulerToQ(...e),dot=Math.abs(arm.q.reduce((sum,v,i)=>sum+v*toQ[i],0));
+    const angle=2*Math.acos(clamp(dot,-1,1))/deg;
+    // Arbitrary visual interpolation only. No physical motion-planning claim.
+    const profile=speeds();
+    const duration=Math.max(.5,1.5*distance/profile.arm_linear,1.5*angle/profile.arm_angular);
+    const params={...motionParams(),arm:state.arm,frame:'base',position_m:p.map(v=>v/1000),orientation_xyzw:toQ,max_linear_mps:profile.arm_linear/1000,max_angular_radps:profile.arm_angular*deg};
+    const pair=exchange('arm.move_to',params);if(!applyCommandResponse(pair.request,pair.response))return;
+    state.target={type:'arm',arm:state.arm,fromP:[...arm.p],toP:p,fromQ:[...arm.q],toQ,elapsed:0,duration,motionId:params.motion_id,seq:1,renewElapsed:0};
+    closeModal();status(`${names[state.arm]}正在移动到模拟目标 · 可随时停止`);toast('开始模拟目标移动；未验证真实可达性。');
+  });
+  $('head-center').addEventListener('click',()=>{
+    if(!canControl())return;
+    if(Math.abs(state.head.yaw)<.05 && Math.abs(state.head.pitch)<.05){toast('模拟头部已经面向正前方。');return;}
+    openModal('head-modal');
+  });
+  $('confirm-head-center').addEventListener('click',()=>{
+    if(!canControl())return;
+    const params={...motionParams(),max_angular_radps:speeds().head_angular*deg};
+    const pair=exchange('head.center',params);if(!applyCommandResponse(pair.request,pair.response))return;
+    state.target={type:'head',yaw:state.head.yaw,pitch:state.head.pitch,elapsed:0,duration:Math.max(.5,1.5*Math.max(Math.abs(state.head.yaw),Math.abs(state.head.pitch))/speeds().head_angular),motionId:params.motion_id,seq:1,renewElapsed:0};
+    closeModal();status('模拟头部正在回正 · 可随时停止');
+  });
+
+  // Tooltips are available on hover, keyboard focus, and touch/click.
+  function showTooltip(owner) {
+    tooltipOwner=owner;$('tooltip').textContent=owner.dataset.tip;$('tooltip').hidden=false;
+    owner.setAttribute('aria-describedby','tooltip');
+    const r=owner.getBoundingClientRect(),t=$('tooltip').getBoundingClientRect();
+    $('tooltip').style.left=`${clamp(r.left+r.width/2-t.width/2,12,window.innerWidth-t.width-12)}px`;
+    $('tooltip').style.top=`${r.bottom+t.height+13<window.innerHeight?r.bottom+9:Math.max(10,r.top-t.height-9)}px`;
+  }
+  function hideTooltip(){if(tooltipOwner)tooltipOwner.removeAttribute('aria-describedby');tooltipOwner=null;$('tooltip').hidden=true;}
+  all('[data-tip]').forEach(button=>{
+    button.addEventListener('mouseenter',()=>showTooltip(button));
+    button.addEventListener('mouseleave',()=>{if(document.activeElement!==button)hideTooltip();});
+    button.addEventListener('focus',()=>showTooltip(button));
+    button.addEventListener('blur',hideTooltip);
+    button.addEventListener('click',event=>{event.preventDefault();showTooltip(button);});
+  });
+  document.addEventListener('pointerdown',event=>{if(!event.target.closest('[data-tip]'))hideTooltip();});
+  window.addEventListener('scroll',hideTooltip,{passive:true,capture:true});
+  window.addEventListener('resize',hideTooltip);
+
+  // Quaternion utilities, xyzw. q = qz(yaw) * qy(pitch) * qx(roll).
+  function qMul(a,b){const [x,y,z,w]=a,[X,Y,Z,W]=b;return [w*X+x*W+y*Z-z*Y,w*Y-x*Z+y*W+z*X,w*Z+x*Y-y*X+z*W,w*W-x*X-y*Y-z*Z];}
+  function qNormalize(q){const n=Math.hypot(...q);return q.map(v=>v/n);}
+  function eulerToQ(roll,pitch,yaw){const cr=Math.cos(roll*deg/2),sr=Math.sin(roll*deg/2),cp=Math.cos(pitch*deg/2),sp=Math.sin(pitch*deg/2),cy=Math.cos(yaw*deg/2),sy=Math.sin(yaw*deg/2);return [sr*cp*cy-cr*sp*sy,cr*sp*cy+sr*cp*sy,cr*cp*sy-sr*sp*cy,cr*cp*cy+sr*sp*sy];}
+  function qToEuler(q){const [x,y,z,w]=q;return [Math.atan2(2*(w*x+y*z),1-2*(x*x+y*y))/deg,Math.asin(clamp(2*(w*y-z*x),-1,1))/deg,Math.atan2(2*(w*z+x*y),1-2*(y*y+z*z))/deg];}
+  function qSlerp(a,b,t){let dot=a.reduce((sum,v,i)=>sum+v*b[i],0);let end=[...b];if(dot<0){dot=-dot;end=end.map(v=>-v);}if(dot>.9995)return qNormalize(a.map((v,i)=>v+(end[i]-v)*t));const theta=Math.acos(clamp(dot,-1,1));const s=Math.sin(theta);return a.map((v,i)=>(Math.sin((1-t)*theta)*v+Math.sin(t*theta)*end[i])/s);}
+  function atLimit(message){stopJog();status(`${message} · 已停止（模拟）`);toast(`${message}。真机范围需由控制器定义。`,true);}
+  function tick(dt) {
+    if(!state.enabled || !state.connected) return;
+    const profile=speeds();
+    if(state.jog){
+      renewActiveProtocol(state.jog,dt);
+      const [type,direction,signText]=state.jog.action.split(':'),sign=Number(signText),arm=state.arms[state.jog.arm];
+      if(type==='base'){
+        state.base.v=direction==='forward'?profile.base_linear:direction==='backward'?-profile.base_linear:0;
+        state.base.w=direction==='left'?profile.base_angular:direction==='right'?-profile.base_angular:0;
+      }else if(type==='body'){
+        const proposed=state.body+(direction==='up'?1:-1)*profile.body_lift*dt;state.body=clamp(proposed,300,700);
+        if(proposed<300 || proposed>700)atLimit('身体已到演示行程边界');
+      }else if(type==='body_pitch'){
+        const proposed=state.bodyPitch+(direction==='forward'?1:-1)*profile.body_pitch*dt;
+        state.bodyPitch=clamp(proposed,-20,30);
+        if(proposed < -20 || proposed > 30)atLimit('身体俯仰已到演示角度边界');
+      }else if(type==='waist'){
+        const proposed=state.waistYaw+(direction==='left'?1:-1)*profile.waist_yaw*dt;
+        state.waistYaw=clamp(proposed,-90,90);
+        if(proposed < -90 || proposed > 90)atLimit('腰部已到演示转动边界');
+      }else if(type==='arm'){
+        const i={x:0,y:1,z:2}[direction],proposed=arm.p[i]+sign*profile.arm_linear*dt;
+        arm.p[i]=clamp(proposed,...positionLimits[i]);if(proposed<positionLimits[i][0] || proposed>positionLimits[i][1])atLimit('末端已到原型的演示范围边界');
+      }else if(type==='rotate'){
+        const angle=sign*profile.arm_angular*dt*deg/2,dq=[0,0,0,Math.cos(angle)];dq[{x:0,y:1,z:2}[direction]]=Math.sin(angle);
+        arm.q=qNormalize(qMul(dq,arm.q));
+      }else if(type==='grip'){
+        const proposed=arm.grip+(direction==='open'?1:-1)*profile.gripper*dt;arm.grip=clamp(proposed,0,100);
+        if(proposed<0 || proposed>100){stopJog();status(`模拟夹爪已${arm.grip===0?'完全闭合':'完全张开'} · 不代表抓取成功`);}
+      }else if(type==='head'){
+        const axis=(direction==='left'||direction==='right')?'yaw':'pitch';
+        const limits=axis==='yaw'?[-80,80]:[-35,45];
+        const proposed=state.head[axis]+(['left','up'].includes(direction)?1:-1)*profile.head_angular*dt;
+        state.head[axis]=clamp(proposed,...limits);
+        if(proposed<limits[0]||proposed>limits[1])atLimit('头部已到演示转动边界');
+      }
+    }
+    if(state.target){
+      renewActiveProtocol(state.target,dt);
+      const t=state.target;t.elapsed+=dt;const linear=Math.min(t.elapsed/t.duration,1),s=linear*linear*(3-2*linear);
+      if(t.type==='arm'){
+        const arm=state.arms[t.arm];arm.p=t.fromP.map((v,i)=>v+(t.toP[i]-v)*s);arm.q=qSlerp(t.fromQ,t.toQ,s);
+      }else{state.head.yaw=t.yaw*(1-s);state.head.pitch=t.pitch*(1-s);}
+      if(linear>=1){state.target=null;status(t.type==='arm'?`${names[t.arm]}已到达模拟目标 · 非真机执行结果`:'模拟头部已回正');toast(t.type==='arm'?'模拟目标移动已完成。':'模拟头部已面向正前方。');}
+    }
+  }
+  function render(force=false){
+    const now=performance.now();if(!force&&now-lastRender<50)return;lastRender=now;
+    const arm=state.arms[state.arm];const values=state.mode==='position'?arm.p:qToEuler(arm.q);
+    values.forEach((v,i)=>$(`pose-${i}`).textContent=state.mode==='position'?Math.round(v):Number(v.toFixed(1)).toString());
+    $('body-height').textContent=Math.round(state.body);$('body-fill').style.width=`${(state.body-300)/4}%`;
+    $('body-meter').setAttribute('aria-valuenow',String(Math.round(state.body)));
+    $('body-pitch-value').textContent=simulatedSupport['body.pitch']?Number(state.bodyPitch.toFixed(1)).toString():'—';
+    $('waist-yaw-value').textContent=simulatedSupport['waist.yaw']?Number(state.waistYaw.toFixed(1)).toString():'—';
+    $('gripper-value').textContent=Math.round(arm.grip);
+    $('finger-left').style.transform=`translateX(${-arm.grip/100*5}px)`;$('finger-right').style.transform=`translateX(${arm.grip/100*5}px)`;
+    $('head-yaw').textContent=`${Number(state.head.yaw.toFixed(1))}°`;$('head-pitch').textContent=`${Number(state.head.pitch.toFixed(1))}°`;
+    $('head-face').style.transform=`rotateY(${-state.head.yaw*.7}deg) rotateX(${-state.head.pitch*.65}deg)`;
+    const headMoving=state.jog?.action.startsWith('head:')||state.target?.type==='head';
+    $('head-status').textContent=headMoving?'头部转动中（模拟）':(Math.abs(state.head.yaw)<.05&&Math.abs(state.head.pitch)<.05?'面向正前方':'保持当前朝向');
+    $('base-speed').textContent=state.base.w?`${Math.abs(state.base.w).toFixed(0)} °/s`:`${Math.abs(state.base.v).toFixed(2)} m/s`;
+    $('base-status').textContent=state.base.v>0?'前进中':state.base.v<0?'后退中':state.base.w>0?'左转中':state.base.w<0?'右转中':'静止';
+    $('activity-dot').classList.toggle('active',Boolean(state.jog||state.target));
+  }
+  function frame(timestamp){
+    if(state.frameTime!==null){
+      const elapsed=(timestamp-state.frameTime)/1000;
+      // This is only local demo fail-safe behavior, never a substitute for
+      // an independent controller-side command lease/watchdog.
+      if(elapsed>.6&&(state.jog||state.target))stopAll('页面更新中断 · 已停止模拟动作，请重新启用',true);
+      else tick(Math.min(Math.max(elapsed,0),.05));
+    }
+    state.frameTime=timestamp;render();requestAnimationFrame(frame);
+  }
+  setEnabled(false);updateMode();requestAnimationFrame(frame);
+})();
+</script>
+<script src= /session.js></script></body>
+</html>

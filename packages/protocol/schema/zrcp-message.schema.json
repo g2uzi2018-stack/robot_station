@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/g2uzi2018-stack/robot_station/schemas/zrcp-message.schema.json",
+  "title": "ZRCP/1 message envelope",
+  "description": "Envelope schema for the Robot Station Control Protocol. Command-specific params are defined in the protocol document.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["v", "type", "id", "command", "params"],
+      "properties": {
+        "v": {"const": 1}, "type": {"const": "command"},
+        "id": {"$ref": "#/$defs/id"}, "session_id": {"type": "string", "minLength": 1},
+        "command": {"type": "string", "minLength": 1}, "params": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["v", "type", "id", "session_id", "command", "robot_time_ms", "ok", "code", "msg", "data"],
+      "properties": {
+        "v": {"const": 1}, "type": {"const": "response"}, "id": {"$ref": "#/$defs/id"},
+        "session_id": {"type": ["string", "null"]}, "command": {"type": "string", "minLength": 1},
+        "robot_time_ms": {"type": "integer", "minimum": 0}, "ok": {"type": "boolean"},
+        "code": {"type": "string", "minLength": 1}, "msg": {"type": "string", "maxLength": 512}, "data": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["v", "type", "session_id", "robot_time_ms", "data"],
+      "properties": {
+        "v": {"const": 1}, "type": {"const": "state"}, "session_id": {"type": "string", "minLength": 1},
+        "robot_time_ms": {"type": "integer", "minimum": 0}, "data": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["v", "type", "session_id", "robot_time_ms", "event", "data"],
+      "properties": {
+        "v": {"const": 1}, "type": {"const": "event"}, "session_id": {"type": "string", "minLength": 1},
+        "robot_time_ms": {"type": "integer", "minimum": 0}, "event": {"type": "string", "minLength": 1}, "data": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    {
+      "type": "object",
+      "required": ["v", "type", "session_id", "robot_time_ms", "motion_id", "phase", "code", "msg", "data"],
+      "properties": {
+        "v": {"const": 1}, "type": {"const": "result"}, "session_id": {"type": "string", "minLength": 1},
+        "robot_time_ms": {"type": "integer", "minimum": 0}, "motion_id": {"$ref": "#/$defs/id"},
+        "phase": {"enum": ["completed", "stopped", "failed"]}, "code": {"type": "string", "minLength": 1},
+        "msg": {"type": "string", "maxLength": 512}, "data": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  ],
+  "$defs": { "id": {"type": "string", "pattern": "^[\\x21-\\x7e]{1,64}$"} }
+}

@@ -1,0 +1,25 @@
+import fs from 'node:fs';
+import crypto from 'node:crypto';
+import Database from 'better-sqlite3';
+import { config } from './config.js';
+import { hashPassword } from './password.js';
+
+export type Role = 'admin' | 'operator' | 'viewer';
+export type User = { id: number; email: string; displayName: string; role: Role; enabled: boolean; createdAt: string; };
+type UserRow = { id: number; email: string; display_name: string; role: Role; enabled: number; created_at: string; };
+const dbPath = `${config.dataDir}/robot-station.db`;
+fs.mkdirSync(config.dataDir, { recursive: true });
+export const db = new Database(dbPath);
+db.pragma('journal_mode = WAL');
+db.exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE COLLATE NOCASE, display_name TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('admin','operator','viewer')), enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP); CREATE TABLE IF NOT EXISTS sessions (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, expires_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER, action TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP);`);
+function toUser(row: UserRow): User { return { id: row.id, email: row.email, displayName: row.display_name, role: row.role, enabled: Boolean(row.enabled), createdAt: row.created_at }; }
+export function findUserById(id: number): User | null { const row = db.prepare('SELECT id,email,display_name,role,enabled,created_at FROM users WHERE id=?').get(id) as UserRow | undefined; return row ? toUser(row) : null; }
+export function findUserByEmail(email: string): (User & { passwordHash: string }) | null { const row = db.prepare('SELECT id,email,display_name,role,enabled,created_at,password_hash FROM users WHERE email=?').get(email.trim().toLowerCase()) as (UserRow & { password_hash: string }) | undefined; return row ? { ...toUser(row), passwordHash: row.password_hash } : null; }
+export function listUsers(): User[] { return (db.prepare('SELECT id,email,display_name,role,enabled,created_at FROM users ORDER BY id').all() as UserRow[]).map(toUser); }
+export function createUser(input: { email: string; displayName: string; passwordHash: string; role: Role }): User { const result = db.prepare('INSERT INTO users(email,display_name,password_hash,role) VALUES(?,?,?,?)').run(input.email.trim().toLowerCase(), input.displayName.trim(), input.passwordHash, input.role); return findUserById(Number(result.lastInsertRowid))!; }
+export function updateUser(id: number, input: { displayName?: string; role?: Role; enabled?: boolean; passwordHash?: string }): User | null { const user = findUserById(id); if (!user) return null; const fields: string[] = []; const values: unknown[] = []; if (input.displayName !== undefined) { fields.push('display_name=?'); values.push(input.displayName.trim()); } if (input.role !== undefined) { fields.push('role=?'); values.push(input.role); } if (input.enabled !== undefined) { fields.push('enabled=?'); values.push(input.enabled ? 1 : 0); } if (input.passwordHash !== undefined) { fields.push('password_hash=?'); values.push(input.passwordHash); } if (fields.length) { values.push(id); db.prepare(`UPDATE users SET ${fields.join(',')} WHERE id=?`).run(...values); } return findUserById(id); }
+export function createSession(userId: number, expiresAt: number): string { const token = crypto.randomBytes(32).toString('base64url'); const tokenHash = crypto.createHash('sha256').update(token).digest('hex'); db.prepare('INSERT INTO sessions(token_hash,user_id,expires_at) VALUES(?,?,?)').run(tokenHash,userId,expiresAt); return token; }
+export function findUserBySession(token: string | undefined): User | null { if (!token) return null; const hash = crypto.createHash('sha256').update(token).digest('hex'); const row = db.prepare('SELECT user_id,expires_at FROM sessions WHERE token_hash=?').get(hash) as { user_id:number; expires_at:number } | undefined; if (!row || row.expires_at < Date.now()) return null; return findUserById(row.user_id); }
+export function deleteSession(token: string | undefined): void { if (!token) return; const hash = crypto.createHash('sha256').update(token).digest('hex'); db.prepare('DELETE FROM sessions WHERE token_hash=?').run(hash); }
+export function audit(userId: number | null, action: string, detail: unknown): void { db.prepare('INSERT INTO audit_log(user_id,action,detail) VALUES(?,?,?)').run(userId, action, JSON.stringify(detail)); }
+export async function ensureAdmin(): Promise<void> { if (db.prepare('SELECT 1 FROM users LIMIT 1').get()) return; if (!config.adminPassword) throw new Error('No users exist. Set ADMIN_PASSWORD before first start.'); const hash = await hashPassword(config.adminPassword); createUser({ email: config.adminEmail, displayName: 'Administrator', passwordHash: hash, role: 'admin' }); }
