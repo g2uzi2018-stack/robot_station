@@ -8,6 +8,7 @@
     "build": "npm run build -w @robot-station/protocol && npm run build -w @robot-station/server",
     "start": "npm run start -w @robot-station/server",
     "test": "npm run test -w @robot-station/protocol",
+    "test:integration": "npm run build && node --test tests/control_gateway.test.mjs",
     "typecheck": "npm run build -w @robot-station/protocol && npm run typecheck -w @robot-station/server"
   },
   "engines": { "node": ">=22" },

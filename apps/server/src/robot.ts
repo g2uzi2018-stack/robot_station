@@ -8,7 +8,7 @@ export type RobotStatus = { mode: 'mock' | 'tcp'; connected: boolean; sessionId:
 export class RobotGateway extends EventEmitter {
   private socket: net.Socket | null = null;
   private decoder = new FrameDecoder();
-  private pending = new Map<string, (response: Response) => void>();
+  private pending = new Map<string, { resolve: (response: Response) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private status: RobotStatus = { mode: config.robotMode === 'tcp' ? 'tcp' : 'mock', connected: config.robotMode !== 'tcp', sessionId: config.robotMode === 'mock' ? 'mock-session' : null, robotId: config.robotMode === 'mock' ? 'mock-robot' : null, lastError: null };
   getStatus(): RobotStatus { return { ...this.status }; }
   async connect(): Promise<void> {
@@ -16,8 +16,9 @@ export class RobotGateway extends EventEmitter {
     const target = requireRobotConfig();
     this.socket = net.createConnection({ host: target.host, port: target.port });
     this.socket.on('data', (chunk) => this.onData(chunk));
+    this.socket.on('timeout', () => { if (this.decoder.hasPartialFrame()) { this.status = { ...this.status, connected: false, lastError: 'robot frame timeout' }; this.socket?.destroy(); this.emit('status', this.getStatus()); } else this.socket?.setTimeout(0); });
     this.socket.on('error', (error) => { this.status = { ...this.status, connected: false, lastError: error.message }; this.emit('status', this.getStatus()); });
-    this.socket.on('close', () => { this.status = { ...this.status, connected: false, sessionId: null }; this.emit('status', this.getStatus()); });
+    this.socket.on('close', () => { for (const pending of this.pending.values()) { clearTimeout(pending.timer); pending.reject(new Error('robot connection closed')); } this.pending.clear(); this.status = { ...this.status, connected: false, sessionId: null }; this.emit('status', this.getStatus()); });
     await new Promise<void>((resolve, reject) => { this.socket!.once('connect', resolve); this.socket!.once('error', reject); });
     this.status = { ...this.status, connected: true };
     const response = await this.send('system.hello', { supported_versions: [1], client_id: 'robot-station-server', client_name: 'Robot Station', token: target.token });
@@ -33,16 +34,17 @@ export class RobotGateway extends EventEmitter {
     const message = makeCommand(command, params, id, command === 'system.hello' ? undefined : this.status.sessionId ?? undefined);
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => { this.pending.delete(id); reject(new Error('robot response timeout')); }, 3000);
-      this.pending.set(id, (response) => { clearTimeout(timer); resolve(response); });
+      this.pending.set(id, { resolve, reject, timer });
       this.socket!.write(encodeFrame(message));
     });
   }
   private onData(chunk: Buffer): void {
     try {
       for (const message of this.decoder.push(chunk)) {
-        if (message.type === 'response') { const handler = this.pending.get(message.id); if (handler) { this.pending.delete(message.id); handler(message); } }
+        if (message.type === 'response') { const handler = this.pending.get(message.id); if (handler) { this.pending.delete(message.id); clearTimeout(handler.timer); handler.resolve(message); } }
         this.emit('message', message);
       }
+      this.socket?.setTimeout(this.decoder.hasPartialFrame() ? 1000 : 0);
     } catch (error) {
       this.status = { ...this.status, connected: false, lastError: error instanceof Error ? error.message : String(error) };
       this.socket?.destroy(); this.emit('status', this.getStatus());

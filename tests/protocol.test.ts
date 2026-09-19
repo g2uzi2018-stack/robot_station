@@ -23,6 +23,21 @@ test('rejects invalid frame size and invalid message', () => {
   assert.throws(() => parseMessage({ v: 1, type: 'command', id: 'x', command: 'x' }), /invalid|params|required/i);
 });
 
+test('rejects duplicate JSON object keys', () => {
+  const payload = Buffer.from('{\"v\":1,\"v\":1,\"type\":\"command\",\"id\":\"x\",\"command\":\"system.ping\",\"params\":{}}');
+  const frame = Buffer.alloc(payload.length + 4); frame.writeUInt32BE(payload.length); payload.copy(frame,4);
+  assert.throws(() => new FrameDecoder().push(frame), /duplicate/i);
+});
+
+test('reports an incomplete frame', () => {
+  const decoder = new FrameDecoder();
+  const frame = encodeFrame(command);
+  decoder.push(frame.subarray(0, 3));
+  assert.equal(decoder.hasPartialFrame(), true);
+  decoder.push(frame.subarray(3));
+  assert.equal(decoder.hasPartialFrame(), false);
+});
+
 test('rejects malformed UTF-8', () => {
   const decoder = new FrameDecoder();
   const payload = Buffer.from([0x7b,0x22,0x76,0x22,0x3a,0x31,0x2c,0xff,0x7d]);

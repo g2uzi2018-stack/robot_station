@@ -318,7 +318,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
         <button id="stop-button" class="stop-button" aria-label="软件停止全部模拟动作，不替代实体急停，快捷键 Escape" title="软件停止不能替代实体急停"><svg class="icon"><use href="#i-stop"/></svg>停止全部<kbd>Esc</kbd></button>
       </div>
     </section>
-    <div class="demo-banner" role="note"><div class="demo-left"><svg class="icon"><use href="#i-info"/></svg><span class="demo-label">演示模式</span><span class="demo-explanation">所有数据与动作均为本地模拟，不会连接或控制真实机器人。</span></div><div class="demo-right"><svg class="icon"><use href="#i-shield"/></svg>零外部依赖 · 可离线预览</div></div>
+    <div class="demo-banner" role="note"><div class="demo-left"><svg class="icon"><use href="#i-info"/></svg><span class="demo-label" id="demo-label">演示模式</span><span class="demo-explanation">所有数据与动作均为本地模拟，不会连接或控制真实机器人。</span></div><div class="demo-right"><svg class="icon"><use href="#i-shield"/></svg>零外部依赖 · 可离线预览</div></div>
     <div class="workspace">
       <div class="stack left-stack">
         <section class="card base-card" aria-labelledby="base-title">
@@ -343,7 +343,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
       </div>
       <section class="card arm-card" aria-labelledby="arm-title">
         <div class="card-header"><h2 id="arm-title"><svg class="icon"><use href="#i-arm"/></svg>手臂与夹爪</h2><div class="segmented arm-picker" role="group" aria-label="选择要操作的机械臂"><button data-arm="left" aria-pressed="true">左手</button><button data-arm="right" aria-pressed="false">右手</button></div></div>
-        <div class="feedback-line"><span class="eyebrow" id="readout-label">左手 · 当前末端位置<button class="hint" data-tip="末端是夹爪用来操作物体的参考点（TCP）。左手和右手始终以机器人自身为准，而不是你面对机器人时的左右。" aria-label="末端和左右手说明"><svg class="icon"><use href="#i-info"/></svg></button></span><span class="feedback-chip">模拟反馈</span></div>
+        <div class="feedback-line"><span class="eyebrow" id="readout-label">左手 · 当前末端位置<button class="hint" data-tip="末端是夹爪用来操作物体的参考点（TCP）。左手和右手始终以机器人自身为准，而不是你面对机器人时的左右。" aria-label="末端和左右手说明"><svg class="icon"><use href="#i-info"/></svg></button></span><span class="feedback-chip" id="feedback-chip">模拟反馈</span></div>
         <div class="pose-readout" id="pose-readout">
           <div class="pose-tile"><div class="label" id="pose-label-0">前后 <small>X</small></div><div class="pose-value"><span id="pose-0">350</span><small class="pose-unit">mm</small></div></div>
           <div class="pose-tile"><div class="label" id="pose-label-1">左右 <small>Y</small></div><div class="pose-value"><span id="pose-1">240</span><small class="pose-unit">mm</small></div></div>
@@ -408,7 +408,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
       <div class="field-grid"><div class="field"><label for="robot-host">机器人地址</label><input id="robot-host" type="text" placeholder="例如 192.168.1.100" value="127.0.0.1" maxlength="253" autocomplete="off" spellcheck="false" required></div><div class="field"><label for="robot-port">TCP 端口</label><input id="robot-port" type="number" min="1" max="65535" step="1" value="9000" required></div></div>
       <p class="form-help">此处是机器人控制程序的监听地址，不是浏览器的访问地址。</p>
       <div class="architecture"><span>浏览器</span><svg class="icon"><use href="#i-right"/></svg><strong>Web 后端</strong><svg class="icon"><use href="#i-right"/></svg><span>TCP · 机器人线程</span></div>
-      <div class="callout">本页是离线交互原型，尚未实现 Web 后端或 TCP 服务。「保存配置」只保存在当前浏览器，不发起真实连接，也不改变演示模式。</div>
+      <div class="callout" id="connection-callout">本页是离线交互原型，尚未实现 Web 后端或 TCP 服务。「保存配置」只保存在当前浏览器，不发起真实连接，也不改变演示模式。</div>
       <details class="simulator-options" id="simulator-options">
         <summary>模拟器设置 · 仅用于预览</summary>
         <p class="option-hint">取消勾选后再操作对应按钮，可体验机器人回复「未实现」时的提示。设置仅影响本页模拟器，刷新后恢复。</p>
@@ -469,6 +469,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     <div class="dialog-actions"><button class="secondary-button" data-close>取消</button><button class="primary-button" id="confirm-head-center" data-control disabled>确认回正（模拟）</button></div>
   </section>
 </div>
+<script src="/bridge.js"></script>
 <script>
 'use strict';
 /*
@@ -485,6 +486,9 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   const clamp = (value, lo, hi) => Math.min(hi, Math.max(lo, value));
   const deg = Math.PI / 180;
   const clone = value => JSON.parse(JSON.stringify(value));
+  const bridge = window.robotConsoleBridge || {live:false};
+  const liveMode = bridge.live === true;
+  const modeSuffix = liveMode ? ' · 网关' : '（模拟）';
   const profileNames = {slow:'低速', normal:'标准', fast:'快速'};
   // Display units only. The outgoing robot protocol always uses m, rad and ratio.
   const speedFields = [
@@ -528,7 +532,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     connected: true, enabled: false, speed: 'slow', arm: 'left', mode: 'position',
     body: 480, bodyPitch: 0, waistYaw: 0, head: {yaw: 0, pitch: 0}, base: {v: 0, w: 0},
     arms: {left: {p: [350,240,680], q: [0,0,0,1], grip:65}, right: {p: [350,-240,680], q: [0,0,0,1], grip:65}},
-    jog: null, target: null, frameTime: null, status: '已准备就绪 · 点击「启用控制」开始体验'
+    jog: null, pendingJog: null, target: null, frameTime: null, status: '已准备就绪 · 点击「启用控制」开始体验'
   };
   // ZRCP/1 envelope and numerical velocity examples, matching the complete v1.0 draft.
   // Demo IDs and deadlines are local. No TCP, clock sync, or real watchdog exists here.
@@ -567,44 +571,53 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   function exchange(command,params={}) {
     const request=requestFor(command,params),response=simulatedRobotReply(request);record(request,response);return {request,response};
   }
+  async function execute(command,params={}) {
+    const request=requestFor(command,params);
+    if (!liveMode) { const response=simulatedRobotReply(request); record(request,response); return {request,response}; }
+    try {
+      const response=await bridge.request(command,params);
+      const normalized={v:protocolVersion,type:'response',id:request.id,session_id:response.session_id ?? null,command:response.command ?? command,robot_time_ms:Date.now(),ok:Boolean(response.ok),code:String(response.code ?? 'INVALID_MESSAGE'),msg:String(response.msg ?? ''),data:response.data && typeof response.data==='object' ? response.data : {}};
+      record(request,normalized); return {request,response:normalized};
+    } catch (error) {
+      const response={v:protocolVersion,type:'response',id:request.id,session_id:null,command,robot_time_ms:Date.now(),ok:false,code:'ROBOT_TIMEOUT',msg:error instanceof Error?error.message:'网关不可用',data:{}};
+      record(request,response); return {request,response};
+    }
+  }
   function stopActiveProtocol() {
     const active=state.jog||state.target;
-    if(active?.motionId)exchange('motion.stop',{lease_id:demoLease,motion_id:active.motionId});
+    if(!active?.motionId || !demoLease && !liveMode) return;
+    const params={lease_id:demoLease,motion_id:active.motionId};
+    if (liveMode) { bridge.request('motion.stop',params).catch(() => {}); return; }
+    exchange('motion.stop',params);
   }
   function renewActiveProtocol(active,dt) {
     active.renewElapsed=(active.renewElapsed||0)+dt;
     if(active.renewElapsed>=.1){
       active.renewElapsed=0;
-      exchange('motion.keepalive',{lease_id:demoLease,motion_id:active.motionId,seq:++active.seq,deadline_ms:Math.floor(performance.now()+300)});
+      const params={lease_id:demoLease,motion_id:active.motionId,seq:++active.seq,deadline_ms:Math.floor(performance.now()+300)};
+      if (liveMode) { if (active.renewPending) return; active.renewPending=true; bridge.request('motion.keepalive',params).catch(() => {}).finally(() => { active.renewPending=false; }); }
+      else exchange('motion.keepalive',params);
     }
   }
-  const positionLimits = [[100,650],[-600,600],[300,1050]];
-  const names = {left:'左手',right:'右手'};
-  let currentModal = null, previousFocus = null, tooltipOwner = null;
-  let lastRender = 0;
-
-  function icon(name) { return `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
-  function toast(message, warning = false) {
-    const item = document.createElement('div');
-    item.className = 'toast' + (warning ? ' warning' : '');
-    item.innerHTML = icon(warning ? 'info' : 'check');
-    const text = document.createElement('span'); text.textContent = message; item.append(text);
-    $('toast-stack').append(item);
-    while ($('toast-stack').children.length > 2) $('toast-stack').firstElementChild.remove();
-    setTimeout(() => item.remove(), 3600);
-  }
-  function status(message) { state.status = message; $('status-text').textContent = message; }
-  function setEnabled(value, message) {
+  async function setEnabled(value, message) {
     const next=Boolean(value && state.connected);
-    if(next && !state.enabled){
-      const pair=exchange('control.acquire',{deadline_ms:Math.floor(performance.now()+300)});
-      demoLease=pair.response.data.lease_id;
-      exchange('control.enable',{lease_id:demoLease,deadline_ms:Math.floor(performance.now()+300)});
-    } else if(!next && state.enabled){
-      exchange('motion.stop_all',{}); demoLease=null;
+    if (liveMode) {
+      if (next && !state.enabled) {
+        status('正在请求网关启用控制…');
+        const pair=await execute('control.enable',{});
+        if (!applyCommandResponse(pair.request,pair.response)) { state.enabled=false; render(true); return false; }
+        state.enabled=true;
+      } else if (!next && state.enabled) {
+        const stopPromise=bridge.request('motion.stop_all',{}).catch(() => {});
+        stopMotion(); await stopPromise;
+        bridge.request('control.release',{}).catch(() => {}); state.enabled=false;
+      } else if (!next) { state.enabled=false; }
+    } else {
+      if(next && !state.enabled){ const pair=exchange('control.acquire',{deadline_ms:Math.floor(performance.now()+300)}); demoLease=pair.response.data.lease_id; exchange('control.enable',{lease_id:demoLease,deadline_ms:Math.floor(performance.now()+300)}); }
+      else if(!next && state.enabled){ exchange('motion.stop_all',{}); demoLease=null; }
+      state.enabled = next;
+      if (!state.enabled) stopMotion();
     }
-    state.enabled = next;
-    if (!state.enabled) stopMotion();
     $('enable-button').classList.toggle('enabled', state.enabled);
     $('enable-button').setAttribute('aria-pressed', String(state.enabled));
     $('enable-label').textContent = state.enabled ? '控制已启用' : '启用控制';
@@ -612,57 +625,17 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     all('[data-control]').forEach(button => button.disabled = !state.enabled);
     if (message) status(message);
     render(true);
+    return state.enabled;
   }
   function stopMotion() {
-    if(demoLease)stopActiveProtocol();
-    state.jog = null; state.target = null; state.base.v = 0; state.base.w = 0;
+    if(demoLease || liveMode)stopActiveProtocol();
+    state.jog = null; state.pendingJog = null; state.target = null; state.base.v = 0; state.base.w = 0;
     all('.pressing').forEach(button => button.classList.remove('pressing'));
     render(true);
   }
   function stopAll(message = '已停止全部动作 · 重新启用后可继续', showToast = true) {
-    setEnabled(false, message);
+    void setEnabled(false, message);
     if (showToast) toast(message);
-  }
-  function canControl() {
-    if (!state.connected) {toast('模拟器已断开，请在连接设置中重新连接。',true);return false;}
-    if (!state.enabled) {toast('请先点击顶部「启用控制」。',true);return false;}
-    return true;
-  }
-  function labelFor(action, arm) {
-    const map = {
-      'base:forward':'底座前进','base:backward':'底座后退','base:left':'底座原地左转','base:right':'底座原地右转',
-      'body:up':'身体上升','body:down':'身体下降',
-      'body_pitch:forward':'身体前倾','body_pitch:backward':'身体后仰','waist:left':'腰部左转','waist:right':'腰部右转','head:up':'头部抬头','head:down':'头部低头','head:left':'头部左看','head:right':'头部右看',
-      'grip:open':`${names[arm]}夹爪张开`,'grip:close':`${names[arm]}夹爪闭合`,
-      'arm:x:1':`${names[arm]}向前移动`,'arm:x:-1':`${names[arm]}向后移动`,
-      'arm:y:1':`${names[arm]}向左移动`,'arm:y:-1':`${names[arm]}向右移动`,
-      'arm:z:1':`${names[arm]}抬升`,'arm:z:-1':`${names[arm]}下降`,
-      'rotate:x:1':`${names[arm]}向右倾`,'rotate:x:-1':`${names[arm]}向左倾`,
-      'rotate:y:1':`${names[arm]}向下俯`,'rotate:y:-1':`${names[arm]}向上仰`,
-      'rotate:z:1':`${names[arm]}向左转`,'rotate:z:-1':`${names[arm]}向右转`
-    };
-    return map[action] || '模拟移动';
-  }
-  function makeJogRequest(action) {
-    const [type,direction,signText]=action.split(':'), sign=Number(signText),p=speeds();
-    const commands={base:'base.jog',body:'body.lift.jog',body_pitch:'body.pitch.jog',waist:'waist.yaw.jog',arm:'arm.position.jog',rotate:'arm.rotation.jog',head:'head.jog',grip:'gripper.jog'};
-    const params=motionParams();
-    if(type==='base'){
-      params.linear_mps=direction==='forward'?p.base_linear:direction==='backward'?-p.base_linear:0;
-      params.angular_radps=direction==='left'?p.base_angular*deg:direction==='right'?-p.base_angular*deg:0;
-    } else if(type==='body')params.velocity_mps=(direction==='up'?1:-1)*p.body_lift/1000;
-    else if(type==='body_pitch')params.velocity_radps=(direction==='forward'?1:-1)*p.body_pitch*deg;
-    else if(type==='waist')params.velocity_radps=(direction==='left'?1:-1)*p.waist_yaw*deg;
-    else if(type==='arm'||type==='rotate'){
-      params.arm=state.arm;params.frame='base';params.axis=direction;
-      params[type==='arm'?'velocity_mps':'velocity_radps']=sign*(type==='arm'?p.arm_linear/1000:p.arm_angular*deg);
-    } else if(type==='head'){
-      params.axis=['left','right'].includes(direction)?'yaw':'pitch';
-      params.velocity_radps=(['left','up'].includes(direction)?1:-1)*p.head_angular*deg;
-    } else if(type==='grip'){
-      params.arm=state.arm;params.velocity_ratio_per_s=(direction==='open'?1:-1)*p.gripper/100;
-    }
-    return requestFor(commands[type],params);
   }
   function featureFor(command) {
     if (command === 'body.pitch.jog') return 'body.pitch';
@@ -691,10 +664,10 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   }
   function applyCommandResponse(request, response) {
     // The UI branches on a stable code, never on translated msg text.
-    if (!response || response.v !== protocolVersion || response.type !== 'response' ||
-        response.id !== request.id || response.session_id !== request.session_id || response.command !== request.command ||
-        typeof response.ok !== 'boolean' || typeof response.code !== 'string' ||
-        typeof response.msg !== 'string') {
+    const valid = liveMode
+      ? response && response.v === protocolVersion && response.type === 'response' && response.id === request.id && response.command === request.command && typeof response.ok === 'boolean' && typeof response.code === 'string' && typeof response.msg === 'string'
+      : response && response.v === protocolVersion && response.type === 'response' && response.id === request.id && response.session_id === request.session_id && response.command === request.command && typeof response.ok === 'boolean' && typeof response.code === 'string' && typeof response.msg === 'string';
+    if (!valid) {
       status('指令回复无效 · 未开始动作（模拟）');
       toast('无法确认机器人回复，本次动作未开始。', true); return false;
     }
@@ -716,26 +689,28 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     render(true);
     return false;
   }
-  function admitSimulatedJog(action) {
-    const request = makeJogRequest(action), response = simulatedRobotReply(request);
-    record(request,response);
-    return applyCommandResponse(request,response)?request:null;
+  async function admitSimulatedJog(action) {
+    const request=makeJogRequest(action);
+    const pair=liveMode ? await execute(request.command,request.params) : exchange(request.command,request.params);
+    return applyCommandResponse(pair.request,pair.response)?pair.request:null;
   }
-  function startJog(button, pointerId = null, key = null) {
-    if (currentModal || !canControl() || state.jog) return;
+  async function startJog(button, pointerId = null, key = null) {
+    if (currentModal || !canControl() || state.jog || state.pendingJog) return;
     hideTooltip();
     if (state.target) { stopMotion(); toast('已取消目标移动，切换为按住操作。'); }
-    // Do not start visual motion before the mock controller has accepted it.
-    // A NOT_IMPLEMENTED response leaves the button available for later retries.
-    const request=admitSimulatedJog(button.dataset.action);
+    const action=button.dataset.action; state.pendingJog=action;
+    const request=await admitSimulatedJog(action);
+    if (state.pendingJog!==action) { if(request && liveMode) bridge.request('motion.stop',{lease_id:demoLease,motion_id:request.params.motion_id}).catch(() => {}); return; }
+    state.pendingJog=null;
     if(!request)return;
-    state.jog = {action:button.dataset.action,button,pointerId,key,arm:state.arm,motionId:request.params.motion_id,seq:1,renewElapsed:0};
+    state.jog = {action,button,pointerId,key,arm:state.arm,motionId:request.params.motion_id,seq:1,renewElapsed:0};
     button.classList.add('pressing');
-    status(`${labelFor(state.jog.action,state.jog.arm)}中 · 松开停止（模拟）`);
+    status(`${labelFor(state.jog.action,state.jog.arm)}中 · 松开停止${modeSuffix}`);
     render(true);
   }
   function stopJog(button = null) {
-    if (!state.jog || (button && state.jog.button !== button)) return;
+    if (!state.jog) { if (state.pendingJog) state.pendingJog=null; return; }
+    if (button && state.jog.button !== button) return;
     stopActiveProtocol();
     const label = labelFor(state.jog.action, state.jog.arm);
     state.jog.button.classList.remove('pressing'); state.jog = null;
@@ -747,8 +722,8 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     button.addEventListener('pointerdown', event => {
       if (event.button !== 0 || !event.isPrimary || state.jog || button.disabled) return;
       event.preventDefault(); button.focus({preventScroll:true});
-      startJog(button,event.pointerId);
-      if (state.jog?.button === button) { try {button.setPointerCapture(event.pointerId);} catch {} }
+      void startJog(button,event.pointerId);
+      try {button.setPointerCapture(event.pointerId);} catch {}
     });
     button.addEventListener('pointerup', event => { if (state.jog?.pointerId === event.pointerId) stopJog(button); });
     button.addEventListener('pointercancel', () => stopJog(button));
@@ -931,7 +906,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     ['roll','pitch','yaw'].forEach((axis,i)=>$(`target-${axis}`).value=euler[i].toFixed(1));
     $('target-error').hidden=true;openModal('precise-modal');
   });
-  $('target-form').addEventListener('submit',event=>{
+  $('target-form').addEventListener('submit',async event=>{
     event.preventDefault();if(!canControl())return;
     const p=['x','y','z'].map(axis=>Number($(`target-${axis}`).value));
     const e=['roll','pitch','yaw'].map(axis=>Number($(`target-${axis}`).value));
@@ -946,7 +921,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     const profile=speeds();
     const duration=Math.max(.5,1.5*distance/profile.arm_linear,1.5*angle/profile.arm_angular);
     const params={...motionParams(),arm:state.arm,frame:'base',position_m:p.map(v=>v/1000),orientation_xyzw:toQ,max_linear_mps:profile.arm_linear/1000,max_angular_radps:profile.arm_angular*deg};
-    const pair=exchange('arm.move_to',params);if(!applyCommandResponse(pair.request,pair.response))return;
+    const pair=await execute('arm.move_to',params);if(!applyCommandResponse(pair.request,pair.response))return;
     state.target={type:'arm',arm:state.arm,fromP:[...arm.p],toP:p,fromQ:[...arm.q],toQ,elapsed:0,duration,motionId:params.motion_id,seq:1,renewElapsed:0};
     closeModal();status(`${names[state.arm]}正在移动到模拟目标 · 可随时停止`);toast('开始模拟目标移动；未验证真实可达性。');
   });
@@ -955,10 +930,10 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     if(Math.abs(state.head.yaw)<.05 && Math.abs(state.head.pitch)<.05){toast('模拟头部已经面向正前方。');return;}
     openModal('head-modal');
   });
-  $('confirm-head-center').addEventListener('click',()=>{
+  $('confirm-head-center').addEventListener('click',async ()=>{
     if(!canControl())return;
     const params={...motionParams(),max_angular_radps:speeds().head_angular*deg};
-    const pair=exchange('head.center',params);if(!applyCommandResponse(pair.request,pair.response))return;
+    const pair=await execute('head.center',params);if(!applyCommandResponse(pair.request,pair.response))return;
     state.target={type:'head',yaw:state.head.yaw,pitch:state.head.pitch,elapsed:0,duration:Math.max(.5,1.5*Math.max(Math.abs(state.head.yaw),Math.abs(state.head.pitch))/speeds().head_angular),motionId:params.motion_id,seq:1,renewElapsed:0};
     closeModal();status('模拟头部正在回正 · 可随时停止');
   });
@@ -1064,7 +1039,10 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     }
     state.frameTime=timestamp;render();requestAnimationFrame(frame);
   }
-  setEnabled(false);updateMode();requestAnimationFrame(frame);
+  window.addEventListener('robot-console-closed', () => { state.connected=false; void setEnabled(false,'网关已断开 · 动作已停止，请重新登录或刷新'); $('connection-text').textContent='网关已断开'; $('connection-dot').classList.add('off'); });
+  window.addEventListener('robot-console-bridge-error', event => { status(`网关连接失败 · ${event.detail?.message || '请检查服务'}`); });
+  if (liveMode) { state.connected=true; $('connection-text').textContent='网关连接中'; $('demo-label').textContent='网关模式'; $('feedback-chip').textContent='网关反馈'; $('connection-callout').textContent='当前为实时网关模式：浏览器只连接后端 WebSocket，地址、令牌与控制租约由后端管理。'; $('simulator-options').hidden=true; $('toggle-simulator').hidden=true; document.querySelector('.demo-explanation').textContent='动作会先经后端租约与权限校验，再转发到机器人协议端。'; }
+  void setEnabled(false);updateMode();requestAnimationFrame(frame);
 })();
 </script>
 <script src= /session.js></script></body>

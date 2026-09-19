@@ -1,0 +1,22 @@
+import test, { before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { spawn } from 'node:child_process';
+import WebSocket from '/home/kuang/workspace/robot_station/node_modules/ws/index.js';
+
+const port = 18081;
+const dataDir = mkdtempSync(`${tmpdir()}/robot-station-test-`);
+const env = { ...process.env, PORT:String(port), DATA_DIR:dataDir, ADMIN_EMAIL:'admin@example.com', ADMIN_PASSWORD:'ChangeMe-123456', ROBOT_MODE:'mock', NODE_ENV:'test' };
+let child;
+async function waitForHealth() { for (let i=0;i<50;i++) { try { const response=await fetch(`http://127.0.0.1:${port}/healthz`); if(response.ok)return; } catch {} await new Promise(r=>setTimeout(r,100)); } throw new Error('server did not start'); }
+async function login(email,password) { const response=await fetch(`http://127.0.0.1:${port}/api/auth/login`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email,password})}); assert.equal(response.status,200); const body=await response.json(); return {cookie:response.headers.get('set-cookie').split(';')[0],body}; }
+function openControl(cookie) { return new Promise((resolve,reject)=>{ const ws=new WebSocket(`ws://127.0.0.1:${port}/api/control`,{headers:{cookie}}); const timer=setTimeout(()=>reject(new Error('websocket ready timeout')),3000); ws.once('message',raw=>{clearTimeout(timer);resolve({ws,ready:JSON.parse(raw.toString())})}); ws.once('error',reject); }); }
+function request(ws,message) { return new Promise((resolve,reject)=>{ const timer=setTimeout(()=>reject(new Error('ack timeout')),3000); const handler=raw=>{ const value=JSON.parse(raw.toString()); if(value.type==='ack' && value.id===message.id){clearTimeout(timer);ws.off('message',handler);resolve(value);} }; ws.on('message',handler); ws.send(JSON.stringify(message)); }); }
+
+before(async()=>{ child=spawn('node',['apps/server/dist/index.js'],{cwd:'/home/kuang/workspace/robot_station',env,stdio:'ignore'}); await waitForHealth(); });
+after(()=>{ child?.kill('SIGTERM'); rmSync(dataDir,{recursive:true,force:true}); });
+
+test('operator websocket owns a lease server-side and correlates acks',async()=>{ const admin=await login('admin@example.com','ChangeMe-123456'); const control=await openControl(admin.cookie); assert.equal(control.ready.type,'ready'); const enabled=await request(control.ws,{web_v:1,type:'intent',id:'enable',action:'control.enable',params:{}}); assert.equal(enabled.code,'OK'); assert.equal(enabled.data.lease_id,undefined); const second=await openControl(admin.cookie); const busy=await request(second.ws,{web_v:1,type:'intent',id:'busy',action:'control.enable',params:{}}); assert.equal(busy.code,'CONTROL_BUSY'); second.ws.close(); const jog=await request(control.ws,{web_v:1,type:'intent',id:'jog',action:'base.jog',motion_id:'motion-1',params:{linear_mps:.1,deadline_ms:Date.now()+300}}); assert.equal(jog.code,'OK'); assert.equal(jog.motion_id,'motion-1'); const stopped=await request(control.ws,{web_v:1,type:'intent',id:'stop',action:'motion.stop_all',params:{}}); assert.equal(stopped.code,'OK'); control.ws.close(); await new Promise(r=>setTimeout(r,80)); const afterClose=await openControl(admin.cookie); const reclaimed=await request(afterClose.ws,{web_v:1,type:'intent',id:'reclaim',action:'control.enable',params:{}}); assert.equal(reclaimed.code,'OK'); afterClose.ws.close(); });
+
+test('viewer websocket is read-only',async()=>{ const admin=await login('admin@example.com','ChangeMe-123456'); const created=await fetch(`http://127.0.0.1:${port}/api/users`,{method:'POST',headers:{'content-type':'application/json',cookie:admin.cookie},body:JSON.stringify({email:'viewer@example.com',displayName:'Viewer',password:'Viewer-12345678',role:'viewer'})}); assert.equal(created.status,201); const viewer=await login('viewer@example.com','Viewer-12345678'); const control=await openControl(viewer.cookie); const denied=await request(control.ws,{web_v:1,type:'intent',id:'viewer-motion',action:'base.jog',params:{}}); assert.equal(denied.code,'FORBIDDEN'); control.ws.close(); });
