@@ -14,7 +14,7 @@
       const timer = setTimeout(() => { reject(new Error('网关连接超时')); socket?.close(); }, 4000);
       socket.addEventListener('message', event => {
         let message; try { message = JSON.parse(event.data); } catch { return; }
-        if (message.type === 'ready') { clearTimeout(timer); resolve(message); return; }
+        if (message.type === 'ready') { clearTimeout(timer); window.dispatchEvent(new CustomEvent('robot-console-ready', { detail: message })); resolve(message); return; }
         if (message.type === 'ack' && typeof message.id === 'string') {
           const item = pending.get(message.id); if (!item) return;
           pending.delete(message.id); clearTimeout(item.timer); item.resolve(message); return;

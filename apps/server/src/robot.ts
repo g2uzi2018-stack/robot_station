@@ -26,7 +26,8 @@ export class RobotGateway extends EventEmitter {
     this.status = { ...this.status, connected: true, sessionId: response.session_id, robotId: String(response.data.robot_id ?? '') || null };
     this.emit('status', this.getStatus());
   }
-  disconnect(): void { this.socket?.destroy(); this.socket = null; }
+  disconnect(): void { this.socket?.destroy(); this.socket = null; this.status = { ...this.status, connected: this.status.mode === 'mock', sessionId: this.status.mode === 'mock' ? 'mock-session' : null, robotId: this.status.mode === 'mock' ? 'mock-robot' : null }; this.emit('status', this.getStatus()); }
+  async reconnect(): Promise<void> { if (this.status.mode === 'mock') { this.emit('status', this.getStatus()); return; } this.disconnect(); await this.connect(); }
   async send(command: string, params: Record<string, unknown>): Promise<Response> {
     const id = `server-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     if (this.status.mode === 'mock') return this.mock(command, params, id);

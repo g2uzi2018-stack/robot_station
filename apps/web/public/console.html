@@ -405,8 +405,8 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     <div class="dialog-top"><h3 id="settings-title">连接设置</h3><button class="dialog-close" data-close aria-label="关闭连接设置"><svg class="icon"><use href="#i-cross"/></svg></button></div>
     <p class="dialog-description">网页按常规 Web 方式访问控制台后端。<br>由后端通过 TCP 连接机器人控制线程。</p>
     <form id="connection-form">
-      <div class="field-grid"><div class="field"><label for="robot-host">机器人地址</label><input id="robot-host" type="text" placeholder="例如 192.168.1.100" value="127.0.0.1" maxlength="253" autocomplete="off" spellcheck="false" required></div><div class="field"><label for="robot-port">TCP 端口</label><input id="robot-port" type="number" min="1" max="65535" step="1" value="9000" required></div></div>
-      <p class="form-help">此处是机器人控制程序的监听地址，不是浏览器的访问地址。</p>
+      <div class="field-grid"><div class="field" id="robot-host-field"><label for="robot-host">机器人地址</label><input id="robot-host" type="text" placeholder="例如 192.168.1.100" value="127.0.0.1" maxlength="253" autocomplete="off" spellcheck="false" required></div><div class="field" id="robot-port-field"><label for="robot-port">TCP 端口</label><input id="robot-port" type="number" min="1" max="65535" step="1" value="9000" required></div></div>
+      <p class="form-help">此处是机器人控制程序的监听地址，不是浏览器的访问地址。</p><div id="connection-status" class="callout" role="status">正在读取连接状态…</div>
       <div class="architecture"><span>浏览器</span><svg class="icon"><use href="#i-right"/></svg><strong>Web 后端</strong><svg class="icon"><use href="#i-right"/></svg><span>TCP · 机器人线程</span></div>
       <div class="callout" id="connection-callout">本页是离线交互原型，尚未实现 Web 后端或 TCP 服务。「保存配置」只保存在当前浏览器，不发起真实连接，也不改变演示模式。</div>
       <details class="simulator-options" id="simulator-options">
@@ -415,7 +415,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
         <label class="simulator-check"><input type="checkbox" id="support-body-pitch" checked>模拟器支持身体俯仰</label>
         <label class="simulator-check"><input type="checkbox" id="support-waist-yaw" checked>模拟器支持腰部旋转</label>
       </details>
-      <div class="dialog-actions"><button type="button" class="link-button left-action" id="toggle-simulator">断开模拟器</button><button type="submit" class="primary-button">保存配置</button></div>
+      <div class="dialog-actions"><button type="button" class="link-button left-action" id="toggle-simulator">断开模拟器</button><button type="button" class="secondary-button" id="refresh-connection">刷新状态</button><button type="button" class="secondary-button" id="reconnect-connection">重新连接</button><button type="submit" class="primary-button" id="save-connection">保存配置</button></div>
     </form>
   </section>
 </div>
@@ -427,7 +427,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     <form id="speed-form" novalidate>
       <div class="speed-sheet"><table class="speed-table"><thead><tr><th scope="col">控制部位 / 单位</th><th scope="col">低速</th><th scope="col">标准</th><th scope="col">快速</th></tr></thead><tbody id="speed-rows"></tbody></table></div>
       <div class="speed-brief"><svg class="icon"><use href="#i-info"/></svg><span>数值越大，移动越快。同一行需要满足：低速 ≤ 标准 ≤ 快速。<br>夹爪的 %/s 表示每秒改变的开度百分点，不是夹持力度。</span></div>
-      <div class="callout">这些是模拟用的操作速度，不是真机安全上限。真机接入后仍由控制器检查速度、加速度和机械限位；保存后需要重新启用控制。</div>
+      <div class="callout" id="speed-callout">这些是模拟用的操作速度，不是真机安全上限。真机接入后仍由控制器检查速度、加速度和机械限位；保存后需要重新启用控制。</div>
       <p class="target-error" id="speed-error" role="alert" hidden></p>
       <p class="speed-storage-note" id="speed-storage-note">设置保存在当前浏览器；每次打开仍从低速开始，不会自动启用。</p>
       <div class="dialog-actions"><button type="button" class="link-button left-action" id="reset-speeds">恢复默认</button><button type="button" class="secondary-button" data-close>取消</button><button type="submit" class="primary-button">保存速度</button></div>
@@ -437,7 +437,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
 <div class="modal-backdrop" id="help-modal" hidden>
   <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="help-title">
     <div class="dialog-top"><h3 id="help-title">使用帮助</h3><button class="dialog-close" data-close aria-label="关闭使用帮助"><svg class="icon"><use href="#i-cross"/></svg></button></div>
-    <p class="dialog-description">不必记住坐标或命令，按部位选择动作即可。速度档右侧的「设置」可以分别修改各部位的速度。</p>
+    <p class="dialog-description" id="help-description">不必记住坐标或命令，按部位选择动作即可。速度档右侧的「设置」可以分别修改各部位的速度。</p>
     <div class="help-step"><span class="help-number">1</span><div><strong>点击「启用控制」</strong><p>原型默认连接本地模拟器。每次断开、停止或切走页面后，需要重新启用。</p></div></div>
     <div class="help-step"><span class="help-number">2</span><div><strong>按住方向按钮，松开即停</strong><p>控制底座、升降、身体俯仰、腰部旋转、末端、头部和夹爪。方向始终以机器人自身为准。键盘可用 Tab 聚焦按钮，再按住空格或回车。</p></div></div>
     <div class="help-step"><span class="help-number">3</span><div><strong>左手、右手分别操作</strong><p>「移动」改变夹爪位置；「转动」改变夹爪朝向。需要指定数值时，再打开「精确定位」。</p></div></div>
@@ -458,7 +458,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
       <p class="form-help">这是一次性目标动作，与“按住移动”不同。点击「停止全部」可中途取消。</p>
       <div class="callout warning">仅演示数值插值，不计算逆解、避障或真机轨迹；提交不代表该目标在真实机器人上安全可达。</div>
       <p id="target-error" class="target-error" role="alert" hidden></p>
-      <div class="dialog-actions"><button type="button" class="secondary-button" data-close>取消</button><button type="submit" class="primary-button" data-control disabled>移动到目标（模拟）</button></div>
+      <div class="dialog-actions"><button type="button" class="secondary-button" data-close>取消</button><button type="submit" class="primary-button" data-control disabled>移动到目标</button></div>
     </form>
   </section>
 </div>
@@ -466,7 +466,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="head-confirm-title">
     <div class="dialog-top"><h3 id="head-confirm-title">让头部回到正前方？</h3><button class="dialog-close" data-close aria-label="取消头部回正"><svg class="icon"><use href="#i-cross"/></svg></button></div>
     <p class="dialog-description">模拟头部将缓慢回到左右 0°、俯仰 0°。<br>这是朝向复位，不是电机回零；过程中可以随时停止。</p>
-    <div class="dialog-actions"><button class="secondary-button" data-close>取消</button><button class="primary-button" id="confirm-head-center" data-control disabled>确认回正（模拟）</button></div>
+    <div class="dialog-actions"><button class="secondary-button" data-close>取消</button><button class="primary-button" id="confirm-head-center" data-control disabled>确认回正</button></div>
   </section>
 </div>
 <script src="/bridge.js"></script>
@@ -598,6 +598,91 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
       if (liveMode) { if (active.renewPending) return; active.renewPending=true; bridge.request('motion.keepalive',params).catch(() => {}).finally(() => { active.renewPending=false; }); }
       else exchange('motion.keepalive',params);
     }
+  }
+  const positionLimits = [[100,650],[-600,600],[300,1050]];
+  const names = {left:'左手',right:'右手'};
+  let currentModal = null, previousFocus = null, tooltipOwner = null;
+  let lastRender = 0;
+  function icon(name) { return `<svg class="icon" aria-hidden="true"><use href="#i-${name}"/></svg>`; }
+  function toast(message, warning = false) {
+    const item = document.createElement('div');
+    item.className = 'toast' + (warning ? ' warning' : '');
+    item.innerHTML = icon(warning ? 'info' : 'check');
+    const text = document.createElement('span'); text.textContent = message; item.append(text);
+    $('toast-stack').append(item);
+    while ($('toast-stack').children.length > 2) $('toast-stack').firstElementChild.remove();
+    setTimeout(() => item.remove(), 3600);
+  }
+  function status(message) { state.status = message; $('status-text').textContent = message; }
+  function applyRobotStatus(robotStatus) {
+    if (!liveMode || !robotStatus) return;
+    state.connected = Boolean(robotStatus.connected);
+    const label = robotStatus.mode === 'mock' ? 'Mock' : '机器人';
+    $('connection-text').textContent = state.connected ? `${label}已连接` : `${label}未连接`;
+    $('connection-dot').classList.toggle('off', !state.connected);
+    $('enable-button').disabled = !state.connected;
+    if (!state.connected && state.enabled) void setEnabled(false, '机器人连接已断开 · 动作已停止');
+    const detail = `${label} · ${state.connected ? '已连接' : '未连接'}${robotStatus.robotId ? ` · ${robotStatus.robotId}` : ''}${robotStatus.lastError ? ` · ${robotStatus.lastError}` : ''}`;
+    if ($('connection-status')) $('connection-status').textContent = detail;
+  }
+  async function refreshRobotStatus() {
+    if (!liveMode) { $('connection-status').textContent = state.connected ? '模拟器已连接；地址设置只用于本地预览。' : '模拟器已断开。'; return; }
+    try {
+      const response = await fetch('/api/robot/status', { credentials:'same-origin' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.msg || '无法读取连接状态');
+      applyRobotStatus(payload.data); return payload.data;
+    } catch (error) { $('connection-status').textContent = error instanceof Error ? error.message : '无法读取连接状态'; toast($('connection-status').textContent, true); return null; }
+  }
+  async function reconnectRobot() {
+    if (!liveMode) { $('toggle-simulator').click(); return; }
+    $('reconnect-connection').disabled = true;
+    try {
+      const response = await fetch('/api/robot/reconnect', { method:'POST', credentials:'same-origin' });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.msg || '机器人重连失败');
+      applyRobotStatus(payload.data); toast('机器人连接已刷新。'); status('机器人连接已刷新 · 请重新启用控制');
+    } catch (error) { toast(error instanceof Error ? error.message : '机器人重连失败', true); status('机器人重连失败 · 请检查后端配置'); }
+    finally { $('reconnect-connection').disabled = false; }
+  }
+  function canControl() {
+    if (!state.connected) { toast(liveMode?'机器人未连接，请在连接设置中刷新或重连。':'模拟器已断开，请在连接设置中重新连接。',true); return false; }
+    if (!state.enabled) { toast('请先点击顶部「启用控制」。',true); return false; }
+    return true;
+  }
+  function labelFor(action, arm) {
+    const map = {
+      'base:forward':'底座前进','base:backward':'底座后退','base:left':'底座原地左转','base:right':'底座原地右转',
+      'body:up':'身体上升','body:down':'身体下降',
+      'body_pitch:forward':'身体前倾','body_pitch:backward':'身体后仰','waist:left':'腰部左转','waist:right':'腰部右转','head:up':'头部抬头','head:down':'头部低头','head:left':'头部左看','head:right':'头部右看',
+      'grip:open':`${names[arm]}夹爪张开`,'grip:close':`${names[arm]}夹爪闭合`,
+      'arm:x:1':`${names[arm]}向前移动`,'arm:x:-1':`${names[arm]}向后移动`,
+      'arm:y:1':`${names[arm]}向左移动`,'arm:y:-1':`${names[arm]}向右移动`,
+      'arm:z:1':`${names[arm]}抬升`,'arm:z:-1':`${names[arm]}下降`,
+      'rotate:x:1':`${names[arm]}向右倾`,'rotate:x:-1':`${names[arm]}向左倾`,
+      'rotate:y:1':`${names[arm]}向下俯`,'rotate:y:-1':`${names[arm]}向上仰`,
+      'rotate:z:1':`${names[arm]}向左转`,'rotate:z:-1':`${names[arm]}向右转`
+    };
+    return map[action] || '移动';
+  }
+  function makeJogRequest(action) {
+    const [type,direction,signText]=action.split(':'), sign=Number(signText),p=speeds();
+    const commands={base:'base.jog',body:'body.lift.jog',body_pitch:'body.pitch.jog',waist:'waist.yaw.jog',arm:'arm.position.jog',rotate:'arm.rotation.jog',head:'head.jog',grip:'gripper.jog'};
+    const params=motionParams();
+    if(type==='base'){
+      params.linear_mps=direction==='forward'?p.base_linear:direction==='backward'?-p.base_linear:0;
+      params.angular_radps=direction==='left'?p.base_angular*deg:direction==='right'?-p.base_angular*deg:0;
+    } else if(type==='body') params.velocity_mps=(direction==='up'?1:-1)*p.body_lift/1000;
+    else if(type==='body_pitch') params.velocity_radps=(direction==='forward'?1:-1)*p.body_pitch*deg;
+    else if(type==='waist') params.velocity_radps=(direction==='left'?1:-1)*p.waist_yaw*deg;
+    else if(type==='arm'||type==='rotate'){
+      params.arm=state.arm;params.frame='base';params.axis=direction;
+      params[type==='arm'?'velocity_mps':'velocity_radps']=sign*(type==='arm'?p.arm_linear/1000:p.arm_angular*deg);
+    } else if(type==='head'){
+      params.axis=['left','right'].includes(direction)?'yaw':'pitch';
+      params.velocity_radps=(['left','up'].includes(direction)?1:-1)*p.head_angular*deg;
+    } else if(type==='grip') { params.arm=state.arm; params.velocity_ratio_per_s=(direction==='open'?1:-1)*p.gripper/100; }
+    return requestFor(commands[type],params);
   }
   async function setEnabled(value, message) {
     const next=Boolean(value && state.connected);
@@ -818,7 +903,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   }
   all('[data-close]').forEach(button=>button.addEventListener('click',closeModal));
   all('.modal-backdrop').forEach(backdrop=>backdrop.addEventListener('click',event=>{if(event.target===backdrop)closeModal();}));
-  $('connection-settings').addEventListener('click',()=>openModal('settings-modal'));
+  $('connection-settings').addEventListener('click',()=>{ openModal('settings-modal'); if (liveMode) { $('robot-host').disabled=true; $('robot-port').disabled=true; $('save-connection').hidden=true; $('toggle-simulator').hidden=true; $('speed-callout')?.classList.remove('warning'); } void refreshRobotStatus(); });
   $('help-button').addEventListener('click',()=>openModal('help-modal'));
 
   function fillSpeedForm(profiles) {
@@ -837,9 +922,9 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     });
   }
   $('speed-settings').addEventListener('click',()=>{
-    stopAll('正在设置速度 · 控制已关闭，保存后请重新启用',false);
+    stopAll(`正在设置速度 · 控制已关闭，保存后请重新启用${modeSuffix}`,false);
     fillSpeedForm(speedProfiles);
-    $('speed-storage-note').textContent=storageWarning||'设置保存在当前浏览器；每次打开仍从低速开始，不会自动启用。';
+    $('speed-storage-note').textContent=storageWarning||(liveMode?'速度会随后续控制请求发送，机器人仍会执行最终限速；设置保存在当前浏览器。':'设置保存在当前浏览器；每次打开仍从低速开始，不会自动启用。');
     openModal('speed-modal');
   });
   $('reset-speeds').addEventListener('click',()=>{
@@ -859,7 +944,8 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     try{localStorage.setItem(speedStorageKey,JSON.stringify({version:1,profiles:speedProfiles}));storageWarning='';}
     catch{saved=false;storageWarning='浏览器不允许保存；本次修改仅在当前页面有效，刷新后可能丢失。';}
     refreshSpeedTitles();closeModal();
-    status('速度已更新 · 请重新启用控制后操作（模拟）');
+    status(`速度已更新 · 请重新启用控制后操作${modeSuffix}`);
+    if (liveMode) $('speed-callout').textContent='这些数值会作为后续运动请求的速度上限发送给机器人；机器人端仍必须独立校验速度、加速度和机械限位。';
     toast(saved?'速度已保存。各档将使用新的数值，请重新启用控制。':storageWarning,!saved);
   });
   refreshSpeedTitles();
@@ -871,20 +957,21 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
       status('模拟器配置已更新 · 仅影响演示，不会连接真机');
     });
   });
-  $('connection-form').addEventListener('submit',event=>{
+  $('connection-form').addEventListener('submit',async event=>{
     event.preventDefault();
+    if (liveMode) { await reconnectRobot(); closeModal(); return; }
     const host=$('robot-host').value.trim(),port=Number($('robot-port').value);
-    // Accept a hostname, IPv4 or an IPv6 literal; the production backend must
-    // enforce authentication, allowed destinations, and complete address validation.
     if(!host || !/^[a-zA-Z0-9.:[\]-]+$/.test(host) || !Number.isInteger(port) || port<1 || port>65535){
       toast('请输入有效的主机地址和 1–65535 之间的端口。',true);return;
     }
     let saved=true;
     try{localStorage.setItem('robot-console-preview.connection',JSON.stringify({host,port}));}catch{saved=false;}
     closeModal();
-    toast(saved?'配置已保存在浏览器中；仍使用模拟器，未发起真实连接。':'当前浏览器不允许本地存储，配置仅保留在本页。',!saved);
-    status('已编辑机器人地址 · 未连接真机，仅模拟演示');
+    toast(saved?'预览地址已保存；演示模式不会连接此地址。':'当前浏览器不允许本地存储，配置仅保留在本页。',!saved);
+    status(`已保存预览地址 · 仍使用模拟器${modeSuffix}`);
   });
+  $('refresh-connection').addEventListener('click',()=>void refreshRobotStatus());
+  $('reconnect-connection').addEventListener('click',()=>void reconnectRobot());
   try {
     const saved=JSON.parse(localStorage.getItem('robot-console-preview.connection')||'null');
     if(saved && typeof saved.host==='string' && Number.isInteger(saved.port) && saved.port>0 && saved.port<=65535){$('robot-host').value=saved.host;$('robot-port').value=saved.port;}
@@ -1040,8 +1127,10 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     state.frameTime=timestamp;render();requestAnimationFrame(frame);
   }
   window.addEventListener('robot-console-closed', () => { state.connected=false; void setEnabled(false,'网关已断开 · 动作已停止，请重新登录或刷新'); $('connection-text').textContent='网关已断开'; $('connection-dot').classList.add('off'); });
+  window.addEventListener('robot-console-ready', event => { applyRobotStatus(event.detail?.data?.robot); });
+  window.addEventListener('robot-console-bridge', event => { if (event.detail?.type === 'robot_status') applyRobotStatus(event.detail.data); });
   window.addEventListener('robot-console-bridge-error', event => { status(`网关连接失败 · ${event.detail?.message || '请检查服务'}`); });
-  if (liveMode) { state.connected=true; $('connection-text').textContent='网关连接中'; $('demo-label').textContent='网关模式'; $('feedback-chip').textContent='网关反馈'; $('connection-callout').textContent='当前为实时网关模式：浏览器只连接后端 WebSocket，地址、令牌与控制租约由后端管理。'; $('simulator-options').hidden=true; $('toggle-simulator').hidden=true; document.querySelector('.demo-explanation').textContent='动作会先经后端租约与权限校验，再转发到机器人协议端。'; }
+  if (liveMode) { state.connected=true; $('connection-text').textContent='网关连接中'; $('demo-label').textContent='网关模式'; $('feedback-chip').textContent='网关反馈'; $('connection-callout').textContent='当前为实时网关模式：浏览器只连接后端 WebSocket，地址、令牌与控制租约由后端管理。'; $('simulator-options').hidden=true; $('toggle-simulator').hidden=true; $('save-connection').hidden=true; document.querySelector('.demo-explanation').textContent='动作会先经后端租约与权限校验，再转发到机器人协议端。'; }
   void setEnabled(false);updateMode();requestAnimationFrame(frame);
 })();
 </script>
