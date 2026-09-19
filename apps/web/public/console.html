@@ -209,7 +209,13 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
 .field input{width:100%;height:42px;border:1px solid #e2e8f0;border-radius:10px;background:#f9fbfd;padding:0 12px;color:#536379;font-size:12px;font-variant-numeric:tabular-nums;transition:border-color .15s}
 .field input:focus{border-color:#88bdff;background:#fff}
 .field input:invalid:not(:placeholder-shown){border-color:#dbaeb0}
+.field select{width:100%;height:42px;border:1px solid #e2e8f0;border-radius:10px;background:#f9fbfd;padding:0 12px;color:#536379;font-size:12px;transition:border-color .15s}
+.field select:focus{border-color:#88bdff;background:#fff}
 .field-grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.connection-profile-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end;margin-bottom:13px}
+.connection-profile-row .field select{min-width:0}
+.connection-delete{height:42px;padding:0 12px;border:1px solid #f0d9d7;border-radius:10px;background:#fff5f4;color:#b86667;font-size:11px;white-space:nowrap}
+.connection-delete:hover{background:#ffebe9}
 .field-grid.three{grid-template-columns:repeat(3,1fr);margin-top:12px}
 .form-caption{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:570;color:#6b7c92;margin-top:22px;margin-bottom:9px}
 .form-caption:first-of-type{margin-top:0}
@@ -256,7 +262,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
 .speed-dialog .callout{font-size:10px;padding:10px 12px;margin-top:13px}
 .speed-dialog .dialog-actions{margin-top:17px}
 .speed-storage-note{font-size:10px;color:#97a2b3;line-height:1.7;margin:9px 0 0}
-@media(max-width:680px){.operation-bar{flex-wrap:wrap}.speed-block{width:100%;margin-bottom:2px}.speed-label{display:block;font-size:11px}.speed-settings{margin-left:auto}.speed-options button{padding:7px 12px}.dialog.speed-dialog{padding:22px 17px}.speed-table th{padding:10px 3px;font-size:10px}.speed-table th:first-child{width:39%;padding-left:10px}.speed-table td{padding:6px 4px}.speed-table td:first-child{padding:7px 5px 7px 10px;font-size:11px}.speed-unit{display:block;font-size:9px;margin:3px 0 0}.speed-table input{font-size:11px}.speed-dialog .dialog-actions{flex-wrap:wrap}.footer{flex-wrap:wrap;gap:5px}.footer-right{margin-left:13px}}
+@media(max-width:680px){.operation-bar{flex-wrap:wrap}.speed-block{width:100%;margin-bottom:2px}.speed-label{display:block;font-size:11px}.speed-settings{margin-left:auto}.speed-options button{padding:7px 12px}.dialog.speed-dialog{padding:22px 17px}.speed-table th{padding:10px 3px;font-size:10px}.speed-table th:first-child{width:39%;padding-left:10px}.speed-table td{padding:6px 4px}.speed-table td:first-child{padding:7px 5px 7px 10px;font-size:11px}.speed-unit{display:block;font-size:9px;margin:3px 0 0}.speed-table input{font-size:11px}.speed-dialog .dialog-actions{flex-wrap:wrap}.connection-profile-row{grid-template-columns:minmax(0,1fr) auto}.connection-delete{padding:0 9px}.footer{flex-wrap:wrap;gap:5px}.footer-right{margin-left:13px}}
 </style>
 </head>
 <body>
@@ -307,6 +313,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
       <span class="divider-v"></span>
       <button class="top-button" id="connection-settings" aria-label="连接设置"><svg class="icon"><use href="#i-sliders"/></svg><span class="button-text">连接设置</span></button>
       <button class="top-button" id="help-button" aria-label="使用帮助"><svg class="icon"><use href="#i-help"/></svg><span class="button-text">使用帮助</span></button>
+      <span class="account-slot" aria-label="账户菜单"></span>
     </div>
   </header>
   <main>
@@ -405,10 +412,12 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     <div class="dialog-top"><h3 id="settings-title">连接设置</h3><button class="dialog-close" data-close aria-label="关闭连接设置"><svg class="icon"><use href="#i-cross"/></svg></button></div>
     <p class="dialog-description">网页按常规 Web 方式访问控制台后端。<br>由后端通过 TCP 连接机器人控制线程。</p>
     <form id="connection-form">
+      <div class="connection-profile-row" id="connection-profile-row"><div class="field"><label for="connection-profile">已保存的连接</label><select id="connection-profile" aria-label="选择已保存的连接"></select></div><button type="button" class="connection-delete" id="delete-connection" aria-label="删除当前保存的连接">删除</button></div>
+      <div class="field" id="connection-name-field"><label for="connection-name">连接名称</label><input id="connection-name" type="text" placeholder="例如 AGX 模拟接收端" maxlength="80" autocomplete="off" required></div>
       <div class="field-grid"><div class="field" id="robot-host-field"><label for="robot-host">机器人地址</label><input id="robot-host" type="text" placeholder="例如 192.168.1.100" value="127.0.0.1" maxlength="253" autocomplete="off" spellcheck="false" required></div><div class="field" id="robot-port-field"><label for="robot-port">TCP 端口</label><input id="robot-port" type="number" min="1" max="65535" step="1" value="9000" required></div></div>
       <p class="form-help">此处是机器人控制程序的监听地址，不是浏览器的访问地址。</p><div id="connection-status" class="callout" role="status">正在读取连接状态…</div>
       <div class="architecture"><span>浏览器</span><svg class="icon"><use href="#i-right"/></svg><strong>Web 后端</strong><svg class="icon"><use href="#i-right"/></svg><span>TCP · 机器人线程</span></div>
-      <div class="callout" id="connection-callout">本页是离线交互原型，尚未实现 Web 后端或 TCP 服务。「保存配置」只保存在当前浏览器，不发起真实连接，也不改变演示模式。</div>
+      <div class="callout" id="connection-callout">连接名称、地址和端口只保存在当前浏览器，方便下次快速选择；演示模式不会直接连接此地址。</div>
       <details class="simulator-options" id="simulator-options">
         <summary>模拟器设置 · 仅用于预览</summary>
         <p class="option-hint">取消勾选后再操作对应按钮，可体验机器人回复「未实现」时的提示。设置仅影响本页模拟器，刷新后恢复。</p>
@@ -504,7 +513,43 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   ];
   const defaultProfiles = Object.fromEntries(Object.keys(profileNames).map((name,i) => [name,Object.fromEntries(speedFields.map(f=>[f.key,f.values[i]]))]));
   const speedStorageKey = 'robot-console-preview.speed-profiles.v1.mock-robot';
+  const connectionStorageKey = 'robot-console-preview.connections.v1';
   let speedProfiles = clone(defaultProfiles), storageWarning = '';
+  let connectionProfiles = [], selectedConnectionId = '';
+  function connectionId() { return `connection-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,8)}`; }
+  function validConnection(item) { return item && typeof item.id==='string' && typeof item.name==='string' && item.name.trim() && typeof item.host==='string' && item.host.trim() && Number.isInteger(item.port) && item.port>0 && item.port<=65535; }
+  function readConnectionProfiles() {
+    try {
+      const raw=localStorage.getItem(connectionStorageKey);
+      if(raw) {
+        const saved=JSON.parse(raw);
+        if(Array.isArray(saved)) connectionProfiles=saved.filter(validConnection).map(item=>({id:item.id,name:item.name.trim(),host:item.host.trim(),port:item.port}));
+      }
+      if(!connectionProfiles.length) {
+        const legacy=JSON.parse(localStorage.getItem('robot-console-preview.connection')||'null');
+        if(legacy && typeof legacy.host==='string' && Number.isInteger(legacy.port) && legacy.port>0 && legacy.port<=65535) connectionProfiles=[{id:connectionId(),name:'默认连接',host:legacy.host.trim(),port:legacy.port}];
+      }
+    } catch { connectionProfiles=[]; }
+  }
+  function saveConnectionProfiles() { localStorage.setItem(connectionStorageKey,JSON.stringify(connectionProfiles)); }
+  function renderConnectionProfiles() {
+    const select=$('connection-profile'), deleteButton=$('delete-connection');
+    select.replaceChildren(new Option(connectionProfiles.length?'选择已保存的连接':'暂无已保存连接',''));
+    connectionProfiles.forEach(item=>select.add(new Option(item.name,item.id)));
+    select.value=selectedConnectionId;
+    deleteButton.disabled=!selectedConnectionId || liveMode;
+  }
+  function applyConnectionProfile(id) {
+    const profile=connectionProfiles.find(item=>item.id===id); selectedConnectionId=profile?.id||'';
+    if(profile){ $('connection-name').value=profile.name; $('robot-host').value=profile.host; $('robot-port').value=String(profile.port); }
+    renderConnectionProfiles();
+  }
+  function initializeConnectionProfiles() {
+    readConnectionProfiles();
+    const legacy=connectionProfiles[0];
+    if(legacy){ selectedConnectionId=legacy.id; $('connection-name').value=legacy.name; $('robot-host').value=legacy.host; $('robot-port').value=String(legacy.port); }
+    renderConnectionProfiles();
+  }
   function profileValidation(candidate) {
     for (const f of speedFields) {
       for (const name of Object.keys(profileNames)) {
@@ -903,7 +948,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   }
   all('[data-close]').forEach(button=>button.addEventListener('click',closeModal));
   all('.modal-backdrop').forEach(backdrop=>backdrop.addEventListener('click',event=>{if(event.target===backdrop)closeModal();}));
-  $('connection-settings').addEventListener('click',()=>{ openModal('settings-modal'); if (liveMode) { $('robot-host').disabled=true; $('robot-port').disabled=true; $('save-connection').hidden=true; $('toggle-simulator').hidden=true; $('speed-callout')?.classList.remove('warning'); } void refreshRobotStatus(); });
+  $('connection-settings').addEventListener('click',()=>{ openModal('settings-modal'); if (liveMode) { $('connection-profile-row').hidden=true; $('connection-name-field').hidden=true; $('connection-name').disabled=true; $('robot-host').disabled=true; $('robot-port').disabled=true; $('save-connection').hidden=true; $('toggle-simulator').hidden=true; $('speed-callout')?.classList.remove('warning'); } else { $('connection-profile-row').hidden=false; $('connection-name-field').hidden=false; $('connection-name').disabled=false; $('robot-host').disabled=false; $('robot-port').disabled=false; $('save-connection').hidden=false; $('toggle-simulator').hidden=false; renderConnectionProfiles(); } void refreshRobotStatus(); });
   $('help-button').addEventListener('click',()=>openModal('help-modal'));
 
   function fillSpeedForm(profiles) {
@@ -960,22 +1005,35 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   $('connection-form').addEventListener('submit',async event=>{
     event.preventDefault();
     if (liveMode) { await reconnectRobot(); closeModal(); return; }
-    const host=$('robot-host').value.trim(),port=Number($('robot-port').value);
+    const name=$('connection-name').value.trim(),host=$('robot-host').value.trim(),port=Number($('robot-port').value);
+    if(!name || name.length>80){ toast('请填写连接名称（最多 80 个字符）。',true);return; }
     if(!host || !/^[a-zA-Z0-9.:[\]-]+$/.test(host) || !Number.isInteger(port) || port<1 || port>65535){
       toast('请输入有效的主机地址和 1–65535 之间的端口。',true);return;
     }
     let saved=true;
-    try{localStorage.setItem('robot-console-preview.connection',JSON.stringify({host,port}));}catch{saved=false;}
+    try {
+      const item={id:selectedConnectionId||connectionId(),name,host,port};
+      const index=connectionProfiles.findIndex(profile=>profile.id===item.id);
+      if(index>=0) connectionProfiles[index]=item; else connectionProfiles.push(item);
+      selectedConnectionId=item.id; saveConnectionProfiles(); renderConnectionProfiles();
+    } catch { saved=false; }
     closeModal();
-    toast(saved?'预览地址已保存；演示模式不会连接此地址。':'当前浏览器不允许本地存储，配置仅保留在本页。',!saved);
-    status(`已保存预览地址 · 仍使用模拟器${modeSuffix}`);
+    toast(saved?'连接配置已保存；下次可直接从列表选择。':'当前浏览器不允许本地存储，配置仅保留在本页。',!saved);
+    status(`已保存连接“${name}” · 仍使用模拟器${modeSuffix}`);
+  });
+  $('connection-profile').addEventListener('change',event=>applyConnectionProfile(event.target.value));
+  $('delete-connection').addEventListener('click',()=>{
+    if(liveMode || !selectedConnectionId) return;
+    const profile=connectionProfiles.find(item=>item.id===selectedConnectionId);
+    if(!profile || !confirm(`删除连接“${profile.name}”？`)) return;
+    connectionProfiles=connectionProfiles.filter(item=>item.id!==selectedConnectionId); selectedConnectionId='';
+    try{saveConnectionProfiles();}catch{}
+    renderConnectionProfiles(); $('connection-name').value=''; $('robot-host').value='127.0.0.1'; $('robot-port').value='9000';
+    toast('已删除该连接配置。');
   });
   $('refresh-connection').addEventListener('click',()=>void refreshRobotStatus());
   $('reconnect-connection').addEventListener('click',()=>void reconnectRobot());
-  try {
-    const saved=JSON.parse(localStorage.getItem('robot-console-preview.connection')||'null');
-    if(saved && typeof saved.host==='string' && Number.isInteger(saved.port) && saved.port>0 && saved.port<=65535){$('robot-host').value=saved.host;$('robot-port').value=saved.port;}
-  } catch {}
+  initializeConnectionProfiles();
   $('toggle-simulator').addEventListener('click',()=>{
     state.connected=!state.connected;
     Object.keys(optionalFeatures).forEach(clearFeatureNotice);
