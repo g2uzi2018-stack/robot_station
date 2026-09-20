@@ -3,7 +3,7 @@
 
 It deliberately has no robot hardware dependency.  It accepts the same
 length-prefixed JSON frames as a real receiver, applies the control/lease
-rules used by the gateway, and prints every received and transmitted message.
+rules used by the gateway, and prints human-readable summaries of messages.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from typing import Any, Optional
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 65_536
 LEASE_SECONDS = 60.0
+QUIET_COMMANDS = {"system.ping", "control.heartbeat", "motion.keepalive"}
 MOTION_COMMANDS = {
     "base.jog",
     "body.lift.jog",
@@ -49,6 +50,119 @@ def reject_duplicate_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def json_line(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+
+
+def number(value: Any, digits: int = 2) -> str:
+    try:
+        return f"{float(value):.{digits}f}"
+    except (TypeError, ValueError):
+        return "?"
+
+
+def numeric(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def direction(value: Any, positive: str, negative: str, unit: str, digits: int = 2) -> str:
+    try:
+        amount = float(value)
+    except (TypeError, ValueError):
+        return "未知方向"
+    if abs(amount) < 1e-9:
+        return "停止"
+    return f"{positive if amount > 0 else negative} {number(abs(amount), digits)} {unit}"
+
+
+def command_summary(command: str, params: dict[str, Any]) -> str:
+    arm = "左手" if params.get("arm") == "left" else "右手" if params.get("arm") == "right" else "机械臂"
+    if command == "system.hello":
+        return f"握手请求（客户端：{params.get('client_name', '未知')}）"
+    if command == "system.describe":
+        return "读取机器人能力"
+    if command in {"system.ping", "control.heartbeat", "motion.keepalive"}:
+        return "链路保活"
+    if command == "state.get":
+        return "读取机器人状态"
+    if command == "state.subscribe":
+        return f"订阅机器人状态（{params.get('rate_hz', '?')} Hz）"
+    if command == "control.acquire":
+        return "申请控制权"
+    if command == "control.enable":
+        return "启用控制"
+    if command == "control.release":
+        return "释放控制权"
+    if command == "motion.stop_all":
+        return "停止全部动作"
+    if command == "motion.stop":
+        return f"停止当前动作（{params.get('motion_id', '未知动作')}）"
+    if command == "base.jog":
+        parts = []
+        linear = numeric(params.get("linear_mps"))
+        angular = numeric(params.get("angular_radps"))
+        if abs(linear) >= 1e-9:
+            parts.append(direction(linear, "底座前进", "底座后退", "m/s"))
+        if abs(angular) >= 1e-9:
+            parts.append(direction(angular, "底座左转", "底座右转", "rad/s"))
+        return "、".join(parts) if parts else "底座停止"
+    if command == "body.lift.jog":
+        return direction(params.get("velocity_mps", 0), "身体上升", "身体下降", "m/s")
+    if command == "body.pitch.jog":
+        return direction(params.get("velocity_radps", 0), "身体前倾", "身体后仰", "rad/s")
+    if command == "waist.yaw.jog":
+        return direction(params.get("velocity_radps", 0), "腰部左转", "腰部右转", "rad/s")
+    if command == "arm.position.jog":
+        axis = {"x": ("向前", "向后"), "y": ("向左", "向右"), "z": ("抬升", "下降")}.get(params.get("axis"), ("正向", "反向"))
+        return f"{arm}{direction(params.get('velocity_mps', 0), axis[0], axis[1], 'm/s')}"
+    if command == "arm.rotation.jog":
+        axis = {"x": ("向右倾", "向左倾"), "y": ("向下俯", "向上仰"), "z": ("向左转", "向右转")}.get(params.get("axis"), ("正向转动", "反向转动"))
+        return f"{arm}{direction(params.get('velocity_radps', 0), axis[0], axis[1], 'rad/s')}"
+    if command == "arm.move_to":
+        position = params.get("position_m")
+        if isinstance(position, list) and len(position) == 3:
+            return f"{arm}移动到目标（X {number(numeric(position[0]) * 1000, 1)} mm，Y {number(numeric(position[1]) * 1000, 1)} mm，Z {number(numeric(position[2]) * 1000, 1)} mm）"
+        return f"{arm}移动到目标位置"
+    if command == "gripper.jog":
+        return f"{arm}{direction(params.get('velocity_ratio_per_s', 0), '夹爪张开', '夹爪闭合', '%/s')}"
+    if command == "head.jog":
+        axis = params.get("axis")
+        if axis == "yaw":
+            return direction(params.get("velocity_radps", 0), "头部左看", "头部右看", "rad/s")
+        return direction(params.get("velocity_radps", 0), "头部抬头", "头部低头", "rad/s")
+    if command == "head.center":
+        return "头部回正"
+    return f"收到未分类命令：{command}"
+
+
+def response_summary(request: dict[str, Any], result: dict[str, Any]) -> str:
+    command = str(request.get("command", "未知命令"))
+    if result.get("ok"):
+        success = {
+            "system.hello": "握手成功",
+            "system.describe": "能力读取成功",
+            "state.get": "状态读取成功",
+            "control.acquire": "控制权已获取",
+            "control.enable": "控制已启用",
+            "control.release": "控制权已释放",
+            "motion.stop": "当前动作已停止",
+            "motion.stop_all": "全部动作已停止",
+            "arm.move_to": "目标动作已接受",
+            "head.center": "头部回正动作已接受",
+        }
+        return success.get(command, "操作成功")
+    errors = {
+        "UNAUTHORIZED": "令牌错误",
+        "CONTROL_BUSY": "控制权已被占用",
+        "LEASE_REQUIRED": "缺少有效控制权",
+        "LEASE_INVALID": "控制权无效",
+        "CONTROL_DISABLED": "控制尚未启用",
+        "INVALID_ARGUMENT": "参数无效",
+        "UNKNOWN_COMMAND": "命令不支持",
+    }
+    code = str(result.get("code", "ERROR"))
+    return f"操作失败：{errors.get(code, code)}"
 
 
 class ReceiverState:
@@ -241,8 +355,8 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
         frame = len(payload).to_bytes(4, "big") + payload
         with self.send_lock:
             self.request.sendall(frame)
-        if request.get("command") not in {"system.ping", "control.heartbeat", "motion.keepalive"}:
-            print(f"[TX] {json_line(response)}", flush=True)
+        if request.get("command") not in QUIET_COMMANDS:
+            print(f"[TX] {response_summary(request, result)}", flush=True)
 
     def send_error_and_close(self, request: dict[str, Any], code: str, msg: str) -> None:
         try:
@@ -266,8 +380,8 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
         if not isinstance(command, str) or not isinstance(request_id, str) or not isinstance(params, dict):
             self.send_error_and_close(message, "INVALID_MESSAGE", "Invalid command fields")
             return False
-        if command not in {"system.ping", "control.heartbeat", "motion.keepalive"}:
-            print(f"[RX] {json_line(message)}", flush=True)
+        if command not in QUIET_COMMANDS:
+            print(f"[RX] {command_summary(command, params)}", flush=True)
 
         if command == "system.hello":
             versions = params.get("supported_versions")
