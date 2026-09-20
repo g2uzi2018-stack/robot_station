@@ -146,6 +146,7 @@ def response_summary(request: dict[str, Any], result: dict[str, Any]) -> str:
             "system.hello": "握手成功",
             "system.describe": "能力读取成功",
             "state.get": "状态读取成功",
+            "state.subscribe": "状态反馈订阅成功",
             "control.acquire": "控制权已获取",
             "control.enable": "控制已启用",
             "control.release": "控制权已释放",
@@ -402,8 +403,13 @@ class ReceiverState:
                         }),
                     },
                 )
-            if name in {"state.get", "state.subscribe"}:
+            if name == "state.get":
                 return self.ok("State snapshot", self.state_data_locked())
+            if name == "state.subscribe":
+                rate_hz = params.get("rate_hz", 10)
+                if not isinstance(rate_hz, int) or isinstance(rate_hz, bool) or rate_hz < 0 or rate_hz > 20:
+                    return self.error("INVALID_ARGUMENT", "rate_hz must be an integer from 0 to 20.")
+                return self.ok("State subscription accepted", {"rate_hz": rate_hz})
             if name == "control.acquire":
                 if self.lease_id and self.session_id != session_id:
                     return self.error("CONTROL_BUSY", "Another session holds the control lease.")
@@ -543,6 +549,7 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
         self.request.settimeout(1.0)
         self.feedback_stop = threading.Event()
         self.feedback_interval = STATE_INTERVAL_SECONDS
+        self.feedback_enabled = False
         self.feedback_thread = threading.Thread(target=self.feedback_loop, name="receiver-feedback", daemon=True)
         self.feedback_thread.start()
         print(f"[CONN] {self.client_address[0]}:{self.client_address[1]}", flush=True)
@@ -593,7 +600,7 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
 
     def feedback_loop(self) -> None:
         while not self.feedback_stop.wait(self.feedback_interval):
-            if not self.session_id:
+            if not self.session_id or not self.feedback_enabled:
                 continue
             try:
                 self.flush_feedback()
@@ -649,6 +656,7 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
                 self.send_response(message, ReceiverState.error("UNAUTHORIZED", "Invalid receiver token"), None)
                 return False
             self.session_id = f"print-session-{secrets.token_hex(6)}"
+            self.feedback_enabled = True
             self.send_response(message, ReceiverState.ok("Hello", {
                 "protocol_version": PROTOCOL_VERSION,
                 "robot_id": "print-receiver",
@@ -667,9 +675,11 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
             return False
         result = self.state.command(self.session_id, command, params)
         self.send_response(message, result, self.session_id)
-        if command == "state.subscribe":
-            rate_hz = clamp(numeric(params.get("rate_hz"), 10.0), 1.0, 20.0)
-            self.feedback_interval = 1.0 / rate_hz
+        if command == "state.subscribe" and result.get("ok"):
+            rate_hz = int(result["data"]["rate_hz"])
+            self.feedback_enabled = rate_hz > 0
+            if self.feedback_enabled:
+                self.feedback_interval = 1.0 / rate_hz
         self.flush_feedback()
         return True
 

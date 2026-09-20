@@ -4,19 +4,18 @@
 
 ## 开发环境
 
-kuang@119.45.181.86:6021
-密钥 file://C:\Users\kuang\.ssh\jetson_192_168_3_8_ed25519
-路径 /home/kuang/workspace/robot_station
-
-本地 Windows 工作区只用于拉取远端提交。密钥文件不会提交到仓库。
+本地 Windows 工作区用于拉取远端提交；Linux/AGX 负责运行服务和联调。远端主机、SSH 端口、密钥路径和部署目录属于运行环境配置，不写入仓库；密钥文件不会提交。
 
 ## 当前结构
 
 - `doc/机器人控制台通信协议.md`：ZRCP/1 协议与验收约束。
+- `doc/开发与部署.md`：本地开发、AGX、Docker、打印接收端和端口排查步骤。
 - `doc/robot_console_v0.3.html`：原始界面设计参考（不参与运行）。
 - `apps/web/public/`：服务器提供的登录、人员管理、机器人控制台和实时网关桥接页面。
 - `apps/server/`：Fastify Web 网关、会话、人员管理和机器人 TCP 桥接。
 - `packages/protocol/`：共享消息类型、JSON 校验和 TCP 长度分帧。
+- `tests/`：协议测试和网关集成测试。
+- `tools/`：打印接收端等联调工具。
 - `deploy/`：Docker 部署文件。
 
 ## 运行
@@ -28,6 +27,8 @@ npm run dev
 ```
 
 登录后打开 `/console.html` 进入控制台。浏览器只连接 WebSocket `/api/control`，不会获得机器人 TCP 地址、令牌或租约值。控制台只显示机器人端状态和结果，不在浏览器内执行动作。启用控制时后端自动申请并启用 ZRCP 控制租约，松开、停止、页面失焦、隐藏、断开时发送停止请求；机器人最终执行结果仍以 ZRCP 回复、状态和结果事件为准。
+
+更完整的运行、部署、AGX 后台启动、Docker 和端口排查步骤见 [`doc/开发与部署.md`](doc/开发与部署.md)。
 
 WebSocket 意图消息使用 `{web_v:1,type:"intent",id,action,params}`，服务端回 `{web_v:1,type:"ack",id,command,motion_id,ok,code,msg,data}`。`control.enable`、`motion.stop_all` 和断开清理由网关维护每个浏览器连接的租约，浏览器不能自行伪造 `lease_id`。
 

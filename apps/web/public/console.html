@@ -1112,11 +1112,8 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     if (!state.connected) return;
     try {
       const response=await bridge.request('state.subscribe',{rate_hz:10});
-      if(response.ok && response.code==='OK') applyRobotState(response.data);
-      else {
-        const snapshot=await bridge.request('state.get',{});
-        if(snapshot.ok && snapshot.code==='OK') applyRobotState(snapshot.data);
-      }
+      const snapshot=response.ok && response.code==='OK' ? await bridge.request('state.get',{}) : response;
+      if(snapshot.ok && snapshot.code==='OK') applyRobotState(snapshot.data);
     }
     catch {}
   }
