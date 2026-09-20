@@ -200,6 +200,10 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
 .field select{width:100%;height:42px;border:1px solid #e2e8f0;border-radius:10px;background:#f9fbfd;padding:0 12px;color:#536379;font-size:12px;transition:border-color .15s}
 .field select:focus{border-color:#88bdff;background:#fff}
 .field-grid{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+.connection-profile-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:9px;align-items:end;margin-bottom:13px}
+.connection-profile-row .field select{min-width:0}
+.connection-delete{height:42px;padding:0 12px;border:1px solid #f0d9d7;border-radius:10px;background:#fff5f4;color:#b86667;font-size:11px;white-space:nowrap}
+.connection-delete:hover{background:#ffebe9}
 .field-grid.three{grid-template-columns:repeat(3,1fr);margin-top:12px}
 .form-caption{display:flex;align-items:center;gap:4px;font-size:12px;font-weight:570;color:#6b7c92;margin-top:22px;margin-bottom:9px}
 .form-caption:first-of-type{margin-top:0}
@@ -393,12 +397,16 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
 <div class="modal-backdrop" id="settings-modal" hidden>
   <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="settings-title">
     <div class="dialog-top"><h3 id="settings-title">连接设置</h3><button class="dialog-close" data-close aria-label="关闭连接设置"><svg class="icon"><use href="#i-cross"/></svg></button></div>
-    <p class="dialog-description">网页按常规 Web 方式访问控制台后端。<br>由后端通过 TCP 连接机器人控制线程。</p>
+    <p class="dialog-description">浏览器连接本网页服务；网页服务再连接机器人提供的 TCP 服务。<br>选择已保存连接，或填写地址后保存并连接。</p>
     <form id="connection-form">
       <div id="connection-status" class="callout" role="status">正在读取网关与机器人连接状态…</div>
-      <div class="architecture"><span>浏览器</span><svg class="icon"><use href="#i-right"/></svg><strong>Web 后端</strong><svg class="icon"><use href="#i-right"/></svg><span>TCP · 机器人线程</span></div>
-      <div class="callout" id="connection-callout">机器人地址、端口和令牌由服务器配置管理，浏览器只负责查看状态和发起重新连接。</div>
-      <div class="dialog-actions"><button type="button" class="secondary-button" id="refresh-connection">刷新状态</button><button type="button" class="secondary-button" id="reconnect-connection">重新连接</button><button type="submit" class="primary-button">完成</button></div>
+      <div class="architecture"><span>浏览器用户</span><svg class="icon"><use href="#i-right"/></svg><strong>网页服务</strong><svg class="icon"><use href="#i-right"/></svg><span>TCP · 机器人服务</span></div>
+      <div class="connection-profile-row"><div class="field"><label for="connection-profile">已保存连接</label><select id="connection-profile"><option value="">新建连接</option></select></div><button type="button" class="connection-delete" id="delete-connection" disabled>删除</button></div>
+      <div class="field-grid"><div class="field"><label for="connection-name">连接名称</label><input id="connection-name" type="text" maxlength="80" placeholder="例如：实验室机器人"></div><div class="field"><label for="connection-port">端口</label><input id="connection-port" type="number" min="1" max="65535" step="1" placeholder="9000" required></div></div>
+      <div class="field-grid"><div class="field"><label for="connection-host">机器人服务地址</label><input id="connection-host" type="text" maxlength="255" placeholder="192.168.1.100" required></div><div class="field"><label for="connection-token">访问令牌</label><input id="connection-token" type="password" maxlength="4096" placeholder="保存连接时填写"></div></div>
+      <p class="form-help">令牌保存在网页服务的数据目录，不会发送到浏览器日志。选择已有连接时无需再次输入令牌。</p>
+      <div class="callout" id="connection-callout">保存后，网页服务会用这组地址和令牌连接机器人服务。</div>
+      <div class="dialog-actions"><button type="button" class="secondary-button" id="refresh-connection">刷新状态</button><button type="button" class="secondary-button" id="reconnect-connection">重新连接</button><button type="button" class="secondary-button" id="save-connection">保存连接</button><button type="submit" class="primary-button" id="connect-connection">连接</button></div>
     </form>
   </section>
 </div>
@@ -578,16 +586,47 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     setTimeout(() => item.remove(), 3600);
   }
   function status(message) { state.status = message; $('status-text').textContent = message; }
+  let connectionProfiles = [];
+  function fillConnectionForm(profile) {
+    $('connection-name').value = profile?.name || '';
+    $('connection-host').value = profile?.host || '';
+    $('connection-port').value = profile?.port ? String(profile.port) : '';
+    $('connection-token').value = '';
+    $('delete-connection').disabled = !profile;
+  }
+  function renderConnectionProfiles(selectedId = null) {
+    const select=$('connection-profile');
+    const current=selectedId === null ? select.value : String(selectedId);
+    select.replaceChildren(new Option('新建连接',''));
+    connectionProfiles.forEach(profile=>{ const option=new Option(`${profile.name} · ${profile.host}:${profile.port}`,String(profile.id)); select.add(option); });
+    select.value=connectionProfiles.some(profile=>String(profile.id)===current) ? current : '';
+    const selected=connectionProfiles.find(profile=>String(profile.id)===select.value);
+    fillConnectionForm(selected);
+  }
+  async function loadRobotConnections(selectedId = null) {
+    try {
+      const response=await fetch('/api/robot/connections',{credentials:'same-origin'});
+      const payload=await response.json();
+      if(!response.ok) throw new Error(payload.msg || '无法读取已保存连接');
+      connectionProfiles=Array.isArray(payload.data?.connections) ? payload.data.connections : [];
+      renderConnectionProfiles(selectedId);
+      return connectionProfiles;
+    } catch(error) { toast(error instanceof Error ? error.message : '无法读取已保存连接',true); return []; }
+  }
   function applyRobotStatus(robotStatus) {
     if (!robotStatus) return;
     state.connected = Boolean(robotStatus.connected);
     const label = '机器人';
+    const connectionName=robotStatus.connectionName ? ` · ${robotStatus.connectionName}` : '';
     $('connection-text').textContent = state.connected ? `${label}已连接` : `${label}未连接`;
     $('connection-dot').classList.toggle('off', !state.connected);
     $('enable-button').disabled = !state.connected;
     if (!state.connected && state.enabled) void setEnabled(false, '机器人连接已断开 · 动作已停止');
-    const detail = `${label} · ${state.connected ? '已连接' : '未连接'}${robotStatus.robotId ? ` · ${robotStatus.robotId}` : ''}${robotStatus.lastError ? ` · ${robotStatus.lastError}` : ''}`;
+    const endpoint=robotStatus.host && robotStatus.port ? ` · ${robotStatus.host}:${robotStatus.port}` : '';
+    const detail = `${label} · ${state.connected ? '已连接' : '未连接'}${connectionName}${endpoint}${robotStatus.robotId ? ` · ${robotStatus.robotId}` : ''}${robotStatus.lastError ? ` · ${robotStatus.lastError}` : ''}`;
     if ($('connection-status')) $('connection-status').textContent = detail;
+    if (robotStatus.connectionId) { $('connection-profile').value=String(robotStatus.connectionId); $('delete-connection').disabled=false; }
+    else if ($('connection-profile')) { $('connection-profile').value=''; fillConnectionForm(null); }
   }
   async function refreshRobotStatus() {
     try {
@@ -606,6 +645,42 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
       applyRobotStatus(payload.data); toast('机器人连接已刷新。'); status('机器人连接已刷新 · 请重新启用控制');
     } catch (error) { toast(error instanceof Error ? error.message : '机器人重连失败', true); status('机器人重连失败 · 请检查后端配置'); }
     finally { $('reconnect-connection').disabled = false; }
+  }
+  async function connectRobot() {
+    const profileId=Number($('connection-profile').value);
+    if(!Number.isInteger(profileId) || profileId<1) { toast('请先保存并选择一个连接。',true); return false; }
+    $('connect-connection').disabled=true;
+    try {
+      const response=await fetch('/api/robot/connect',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify({profileId})});
+      const payload=await response.json();
+      if(!response.ok) throw new Error(payload.msg || '机器人连接失败');
+      applyRobotStatus(payload.data); toast('机器人连接已建立。'); status('机器人连接已建立 · 请启用控制'); return true;
+    } catch(error) { toast(error instanceof Error ? error.message : '机器人连接失败',true); status('机器人连接失败 · 请检查连接设置'); return false; }
+    finally { $('connect-connection').disabled=false; }
+  }
+  async function saveRobotConnection() {
+    const body={name:$('connection-name').value.trim(),host:$('connection-host').value.trim(),port:Number($('connection-port').value),token:$('connection-token').value};
+    if(!body.name || !body.host || !Number.isInteger(body.port) || body.port<1 || body.port>65535 || !body.token) { toast('请填写连接名称、地址、端口和令牌。',true); return false; }
+    $('save-connection').disabled=true;
+    try {
+      const response=await fetch('/api/robot/connections',{method:'POST',headers:{'content-type':'application/json'},credentials:'same-origin',body:JSON.stringify(body)});
+      const payload=await response.json();
+      if(!response.ok) throw new Error(payload.msg || '连接保存失败');
+      const profile=payload.data.connection; await loadRobotConnections(profile.id); toast('连接已保存。'); return true;
+    } catch(error) { toast(error instanceof Error ? error.message : '连接保存失败',true); return false; }
+    finally { $('save-connection').disabled=false; }
+  }
+  async function deleteRobotConnection() {
+    const profileId=Number($('connection-profile').value);
+    if(!Number.isInteger(profileId) || profileId<1) return;
+    if(!window.confirm('删除这条已保存连接？')) return;
+    $('delete-connection').disabled=true;
+    try {
+      const response=await fetch(`/api/robot/connections/${profileId}`,{method:'DELETE',credentials:'same-origin'});
+      const payload=await response.json();
+      if(!response.ok) throw new Error(payload.msg || '连接删除失败');
+      await loadRobotConnections(); toast('连接已删除。');
+    } catch(error) { toast(error instanceof Error ? error.message : '连接删除失败',true); $('delete-connection').disabled=false; }
   }
   function canControl() {
     if (!state.connected) { toast('机器人未连接，请在连接设置中刷新或重连。',true); return false; }
@@ -844,7 +919,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   }
   all('[data-close]').forEach(button=>button.addEventListener('click',closeModal));
   all('.modal-backdrop').forEach(backdrop=>backdrop.addEventListener('click',event=>{if(event.target===backdrop)closeModal();}));
-  $('connection-settings').addEventListener('click',()=>{ openModal('settings-modal'); void refreshRobotStatus(); });
+  $('connection-settings').addEventListener('click',()=>{ openModal('settings-modal'); void Promise.all([refreshRobotStatus(),loadRobotConnections()]); });
   $('help-button').addEventListener('click',()=>openModal('help-modal'));
 
   function fillSpeedForm(profiles) {
@@ -893,8 +968,11 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
 
   $('connection-form').addEventListener('submit',async event=>{
     event.preventDefault();
-    await reconnectRobot(); closeModal();
+    if(await connectRobot()) closeModal();
   });
+  $('connection-profile').addEventListener('change',()=>{ const selected=connectionProfiles.find(profile=>String(profile.id)===$('connection-profile').value); fillConnectionForm(selected); });
+  $('save-connection').addEventListener('click',()=>void saveRobotConnection());
+  $('delete-connection').addEventListener('click',()=>void deleteRobotConnection());
   $('refresh-connection').addEventListener('click',()=>void refreshRobotStatus());
   $('reconnect-connection').addEventListener('click',()=>void reconnectRobot());
   $('precise-button').addEventListener('click',()=>{
@@ -1033,7 +1111,7 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   });
   window.addEventListener('robot-console-bridge-error', event => { status(`网关连接失败 · ${event.detail?.message || '请检查服务'}`); });
   $('feedback-chip').textContent='机器人反馈';
-  $('connection-callout').textContent='浏览器只连接后端 WebSocket，地址、令牌与控制租约由后端管理。';
+  $('connection-callout').textContent='网页服务会按选中的连接配置访问机器人 TCP 服务；浏览器不会直接连接机器人。';
   void refreshRobotStatus(); updateMode(); requestAnimationFrame(frame);
 })();
 </script>

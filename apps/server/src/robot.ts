@@ -1,10 +1,9 @@
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
 import { FrameDecoder, makeCommand, type Response, encodeFrame } from '@robot-station/protocol';
-import { requireRobotConfig } from './config.js';
 
-export type RobotStatus = { mode: 'tcp'; connected: boolean; sessionId: string | null; robotId: string | null; lastError: string | null };
-
+export type RobotTarget = { host: string; port: number; token: string; profileId?: number | null; profileName?: string | null };
+export type RobotStatus = { mode: 'tcp'; connected: boolean; sessionId: string | null; robotId: string | null; lastError: string | null; connectionId: number | null; connectionName: string | null; host: string | null; port: number | null };
 type Pending = { resolve: (response: Response) => void; reject: (error: Error) => void; timer: NodeJS.Timeout };
 
 export class RobotGateway extends EventEmitter {
@@ -12,19 +11,31 @@ export class RobotGateway extends EventEmitter {
   private decoder = new FrameDecoder();
   private pending = new Map<string, Pending>();
   private connectPromise: Promise<void> | null = null;
-  private status: RobotStatus = { mode: 'tcp', connected: false, sessionId: null, robotId: null, lastError: null };
+  private target: RobotTarget | null = null;
+  private status: RobotStatus = { mode: 'tcp', connected: false, sessionId: null, robotId: null, lastError: null, connectionId: null, connectionName: null, host: null, port: null };
 
   getStatus(): RobotStatus { return { ...this.status }; }
+  getTarget(): RobotTarget | null { return this.target ? { ...this.target } : null; }
 
-  async connect(): Promise<void> {
+  async connect(target?: RobotTarget): Promise<void> {
+    if (target) {
+      const changed = !this.sameTarget(this.target, target);
+      this.target = { ...target };
+      this.status = { ...this.status, connectionId: target.profileId ?? null, connectionName: target.profileName ?? null, host: target.host, port: target.port, lastError: null };
+      if (changed && (this.socket || this.status.connected)) this.disconnect();
+    }
     if (this.status.connected && this.socket) return;
     if (this.connectPromise) return this.connectPromise;
+    if (!this.target) throw new Error('No robot connection has been selected');
     this.connectPromise = this.openConnection().finally(() => { this.connectPromise = null; });
     return this.connectPromise;
   }
 
+  private sameTarget(left: RobotTarget | null, right: RobotTarget): boolean { return Boolean(left && left.host === right.host && left.port === right.port && left.token === right.token && (left.profileId ?? null) === (right.profileId ?? null)); }
+
   private async openConnection(): Promise<void> {
-    const target = requireRobotConfig();
+    const target = this.target;
+    if (!target) throw new Error('No robot connection has been selected');
     const socket = net.createConnection({ host: target.host, port: target.port });
     this.socket = socket;
     this.decoder = new FrameDecoder();
@@ -76,18 +87,8 @@ export class RobotGateway extends EventEmitter {
   }
 
   private isCurrent(socket: net.Socket): boolean { return this.socket === socket; }
-
-  private failConnection(socket: net.Socket, message: string): void {
-    if (!this.isCurrent(socket)) return;
-    this.status = { ...this.status, connected: false, lastError: message };
-    this.rejectPending(new Error(message));
-    this.emit('status', this.getStatus());
-  }
-
-  private rejectPending(error: Error): void {
-    for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(error); }
-    this.pending.clear();
-  }
+  private failConnection(socket: net.Socket, message: string): void { if (!this.isCurrent(socket)) return; this.status = { ...this.status, connected: false, lastError: message }; this.rejectPending(new Error(message)); this.emit('status', this.getStatus()); }
+  private rejectPending(error: Error): void { for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(error); } this.pending.clear(); }
 
   disconnect(): void {
     const socket = this.socket;
@@ -98,12 +99,14 @@ export class RobotGateway extends EventEmitter {
     this.emit('status', this.getStatus());
   }
 
-  async reconnect(): Promise<void> {
+  async reconnect(target?: RobotTarget): Promise<void> {
     const inFlight = this.connectPromise;
-    this.disconnect();
-    if (inFlight) {
-      try { await inFlight; } catch {}
+    if (target) {
+      this.target = { ...target };
+      this.status = { ...this.status, connectionId: target.profileId ?? null, connectionName: target.profileName ?? null, host: target.host, port: target.port, lastError: null };
     }
+    this.disconnect();
+    if (inFlight) { try { await inFlight; } catch {} }
     await this.connect();
   }
 
@@ -136,7 +139,7 @@ export class RobotGateway extends EventEmitter {
       this.socket?.setTimeout(this.decoder.hasPartialFrame() ? 1000 : 0);
     } catch (error) {
       const socket = this.socket;
-      this.failConnection(socket!, error instanceof Error ? error.message : String(error));
+      if (socket) this.failConnection(socket, error instanceof Error ? error.message : String(error));
       socket?.destroy();
     }
   }

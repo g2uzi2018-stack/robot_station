@@ -1,7 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-function required(name: string): string { const value = process.env[name]; if (!value) throw new Error(`${name} is required`); return value; }
 function numberEnv(name: string, fallback: number): number { const value = Number(process.env[name] ?? fallback); if (!Number.isFinite(value)) throw new Error(`${name} must be a number`); return value; }
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -21,6 +20,10 @@ export const config = {
   isProduction: process.env.NODE_ENV === 'production',
 };
 
-export function requireRobotConfig(): { host: string; port: number; token: string } {
-  return { host: required('ROBOT_HOST'), port: config.robotPort, token: required('ROBOT_TOKEN') };
+export function readRobotConfig(): { host: string; port: number; token: string } | null {
+  const host = config.robotHost?.trim();
+  const token = config.robotToken?.trim();
+  if (!host && !token) return null;
+  if (!host || !token) throw new Error('ROBOT_HOST and ROBOT_TOKEN must be configured together');
+  return { host, port: config.robotPort, token };
 }

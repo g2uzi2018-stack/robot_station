@@ -241,7 +241,8 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
         frame = len(payload).to_bytes(4, "big") + payload
         with self.send_lock:
             self.request.sendall(frame)
-        print(f"[TX] {json_line(response)}", flush=True)
+        if request.get("command") not in {"system.ping", "control.heartbeat", "motion.keepalive"}:
+            print(f"[TX] {json_line(response)}", flush=True)
 
     def send_error_and_close(self, request: dict[str, Any], code: str, msg: str) -> None:
         try:
@@ -265,7 +266,8 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
         if not isinstance(command, str) or not isinstance(request_id, str) or not isinstance(params, dict):
             self.send_error_and_close(message, "INVALID_MESSAGE", "Invalid command fields")
             return False
-        print(f"[RX] {json_line(message)}", flush=True)
+        if command not in {"system.ping", "control.heartbeat", "motion.keepalive"}:
+            print(f"[RX] {json_line(message)}", flush=True)
 
         if command == "system.hello":
             versions = params.get("supported_versions")

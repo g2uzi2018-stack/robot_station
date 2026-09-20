@@ -31,7 +31,7 @@ npm run dev
 
 WebSocket 意图消息使用 `{web_v:1,type:"intent",id,action,params}`，服务端回 `{web_v:1,type:"ack",id,command,motion_id,ok,code,msg,data}`。`control.enable`、`motion.stop_all` 和断开清理由网关维护每个浏览器连接的租约，浏览器不能自行伪造 `lease_id`。
 
-首次启动前必须在 `.env` 设置 `ADMIN_PASSWORD`，密码至少 12 位，并设置 `ROBOT_HOST`、`ROBOT_PORT` 和 `ROBOT_TOKEN`。服务器只通过 TCP 连接机器人接收端；开发和联调可使用仓库中的打印接收端。
+首次启动前必须在 `.env` 设置 `ADMIN_PASSWORD`，密码至少 12 位。机器人程序提供 TCP 服务端，网页服务按连接设置中的地址、端口和令牌作为 TCP 客户端连接它。连接设置可以保存多个具名目标；开发和联调可使用仓库中的打印接收端。
 
 ## 角色
 
@@ -39,7 +39,7 @@ WebSocket 意图消息使用 `{web_v:1,type:"intent",id,action,params}`，服务
 - `operator`：申请控制权并执行操作。
 - `viewer`：只读查看。
 
-生产部署时应在反向代理启用 HTTPS，并转发 WebSocket Upgrade；限制服务器到机器人端口的网络访问。网页不会直接连接机器人 TCP。Docker Compose 会持久化 SQLite 数据到 `robot_station_data` 卷；首次启动必须提供随机的 `ADMIN_PASSWORD`，真机模式还必须提供 `ROBOT_HOST`、`ROBOT_PORT`、`ROBOT_TOKEN`。
+生产部署时应在反向代理启用 HTTPS，并转发 WebSocket Upgrade；限制网页服务到机器人端口的网络访问。浏览器不会直接连接机器人 TCP，连接配置由网页服务保存并使用。Docker Compose 会持久化 SQLite 数据到 `robot_station_data` 卷；首次启动必须提供随机的 `ADMIN_PASSWORD`。机器人地址、端口和令牌可以通过网页的“连接设置”保存，也可以用环境变量作为启动时的默认连接。
 
 ## 边界
 
@@ -55,7 +55,7 @@ WebSocket 意图消息使用 `{web_v:1,type:"intent",id,action,params}`，服务
 python3 tools/print_robot_receiver.py --host 0.0.0.0 --port 19001 --token test-token
 ```
 
-然后让网关连接它：
+然后让网页服务连接它（也可以在网页“连接设置”中保存这组参数）：
 
 ```bash
 ROBOT_HOST=127.0.0.1 \
