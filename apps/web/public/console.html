@@ -552,12 +552,27 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     if(!active?.motionId) return;
     bridge.request('motion.stop',{motion_id:active.motionId}).catch(() => {});
   }
+  function cancelActiveProtocol(active,message) {
+    if(state.jog===active) { stopJog(active.button); return; }
+    if(state.target===active) {
+      stopActiveProtocol(); state.target=null; status(message); render(true);
+    }
+  }
   function renewActiveProtocol(active,dt) {
     active.renewElapsed=(active.renewElapsed||0)+dt;
     if(active.renewElapsed>=.1){
       active.renewElapsed=0;
       const params={motion_id:active.motionId,seq:++active.seq,deadline_ms:Math.floor(performance.now()+300)};
-      if (active.renewPending) return; active.renewPending=true; bridge.request('motion.keepalive',params).catch(() => {}).finally(() => { active.renewPending=false; });
+      if (active.renewPending) return;
+      active.renewPending=true;
+      bridge.request('motion.keepalive',params)
+        .then(response => {
+          if (!response.ok) cancelActiveProtocol(active,'机器人拒绝动作保活 · 当前动作已停止');
+        })
+        .catch(() => {
+          if (state.jog===active || state.target===active) stopAll('机器人反馈中断 · 动作已停止，请重新启用',true);
+        })
+        .finally(() => { active.renewPending=false; });
     }
   }
   let heartbeatElapsed = 0, heartbeatPending = false;
@@ -823,8 +838,8 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
     button.addEventListener('pointerdown', event => {
       if (event.button !== 0 || !event.isPrimary || state.jog || button.disabled) return;
       event.preventDefault(); button.focus({preventScroll:true});
-      void startJog(button,event.pointerId);
       try {button.setPointerCapture(event.pointerId);} catch {}
+      void startJog(button,event.pointerId);
     });
     button.addEventListener('pointerup', event => { if (state.jog?.pointerId === event.pointerId) stopJog(button); });
     button.addEventListener('pointercancel', () => stopJog(button));
@@ -1095,7 +1110,14 @@ h2>.icon{width:19px;height:19px;color:#6f8aac;stroke-width:1.7}
   }
   async function syncRobotState() {
     if (!state.connected) return;
-    try { const response=await bridge.request('state.get',{}); if(response.ok && response.code==='OK') applyRobotState(response.data); }
+    try {
+      const response=await bridge.request('state.subscribe',{rate_hz:10});
+      if(response.ok && response.code==='OK') applyRobotState(response.data);
+      else {
+        const snapshot=await bridge.request('state.get',{});
+        if(snapshot.ok && snapshot.code==='OK') applyRobotState(snapshot.data);
+      }
+    }
     catch {}
   }
   window.addEventListener('robot-console-closed', () => { state.connected=false; state.enabled=false; state.jog=null; state.target=null; render(true); $('connection-text').textContent='网关已断开'; $('connection-dot').classList.add('off'); $('enable-button').disabled=true; status('网关已断开 · 动作已停止，请重新连接'); });

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import secrets
 import socketserver
 import threading
@@ -20,6 +21,8 @@ from typing import Any, Optional
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 65_536
 LEASE_SECONDS = 60.0
+MOTION_WATCHDOG_SECONDS = 0.75
+STATE_INTERVAL_SECONDS = 0.1
 QUIET_COMMANDS = {"system.ping", "control.heartbeat", "motion.keepalive"}
 MOTION_COMMANDS = {
     "base.jog",
@@ -165,8 +168,35 @@ def response_summary(request: dict[str, Any], result: dict[str, Any]) -> str:
     return f"操作失败：{errors.get(code, code)}"
 
 
+def clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
+
+
+def move_towards(current: float, target: float, step: float) -> float:
+    if abs(target - current) <= step:
+        return target
+    return current + math.copysign(step, target - current)
+
+
+def quaternion_from_euler(roll: float, pitch: float, yaw: float) -> list[float]:
+    cr, sr = math.cos(roll / 2), math.sin(roll / 2)
+    cp, sp = math.cos(pitch / 2), math.sin(pitch / 2)
+    cy, sy = math.cos(yaw / 2), math.sin(yaw / 2)
+    return [
+        sr * cp * cy - cr * sp * sy,
+        cr * sp * cy + sr * cp * sy,
+        cr * cp * sy - sr * sp * cy,
+        cr * cp * cy + sr * sp * sy,
+    ]
+
+
+def quaternion_distance(left: list[float], right: list[float]) -> float:
+    dot = abs(sum(a * b for a, b in zip(left, right)))
+    return 2 * math.acos(clamp(dot, -1.0, 1.0))
+
+
 class ReceiverState:
-    """Shared receiver state, including the single global control lease."""
+    """Shared lease and a small deterministic robot model for protocol testing."""
 
     def __init__(self, token: str, lease_seconds: float = LEASE_SECONDS) -> None:
         self.token = token
@@ -177,9 +207,24 @@ class ReceiverState:
         self.lease_deadline = 0.0
         self.enabled = False
         self.motion: Optional[dict[str, Any]] = None
+        self.last_update = time.monotonic()
+        self.pending_events: list[dict[str, Any]] = []
+        self.base_linear = 0.0
+        self.base_angular = 0.0
+        self.body_lift = 0.48
+        self.body_pitch = 0.0
+        self.waist_yaw = 0.0
+        self.head_yaw = 0.0
+        self.head_pitch = 0.0
+        self.arm_positions = {"left": [0.35, 0.24, 0.68], "right": [0.35, -0.24, 0.68]}
+        self.arm_euler = {"left": [0.0, 0.0, 0.0], "right": [0.0, 0.0, 0.0]}
+        self.grippers = {"left": 0.65, "right": 0.65}
 
     def expire_locked(self) -> None:
         if self.lease_id and time.monotonic() >= self.lease_deadline:
+            self._advance_motion_locked()
+            if self.motion:
+                self._finish_motion_locked("failed", "LEASE_EXPIRED", "控制租约已过期，动作已停止")
             self._clear_lease_locked()
 
     def _clear_lease_locked(self) -> None:
@@ -188,6 +233,8 @@ class ReceiverState:
         self.lease_deadline = 0.0
         self.enabled = False
         self.motion = None
+        self.base_linear = 0.0
+        self.base_angular = 0.0
 
     def disconnect(self, session_id: Optional[str]) -> None:
         with self.lock:
@@ -211,9 +258,129 @@ class ReceiverState:
     def ok(msg: str = "OK", data: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         return {"ok": True, "code": "OK", "msg": msg, "data": data or {}}
 
+    def _advance_motion_locked(self, now: Optional[float] = None) -> None:
+        now = time.monotonic() if now is None else now
+        dt = clamp(now - self.last_update, 0.0, 0.25)
+        self.last_update = now
+        motion = self.motion
+        if not motion:
+            self.base_linear = 0.0
+            self.base_angular = 0.0
+            return
+        if now - float(motion["last_keepalive"]) > MOTION_WATCHDOG_SECONDS:
+            self._finish_motion_locked("stopped", "WATCHDOG_STOPPED", "动作保活超时，已停止")
+            return
+
+        command = motion["command"]
+        params = motion["params"]
+        if command == "base.jog":
+            self.base_linear = numeric(params.get("linear_mps"))
+            self.base_angular = numeric(params.get("angular_radps"))
+            return
+        self.base_linear = 0.0
+        self.base_angular = 0.0
+        if command == "body.lift.jog":
+            self.body_lift = clamp(self.body_lift + numeric(params.get("velocity_mps")) * dt, 0.30, 1.05)
+        elif command == "body.pitch.jog":
+            self.body_pitch = clamp(self.body_pitch + numeric(params.get("velocity_radps")) * dt, -math.radians(30), math.radians(30))
+        elif command == "waist.yaw.jog":
+            self.waist_yaw += numeric(params.get("velocity_radps")) * dt
+        elif command == "arm.position.jog":
+            arm = params.get("arm") if params.get("arm") in self.arm_positions else "left"
+            axis = {"x": 0, "y": 1, "z": 2}.get(params.get("axis"))
+            if axis is not None:
+                limits = ((0.10, 0.65), (-0.60, 0.60), (0.30, 1.05))[axis]
+                position = self.arm_positions[arm]
+                position[axis] = clamp(position[axis] + numeric(params.get("velocity_mps")) * dt, *limits)
+        elif command == "arm.rotation.jog":
+            arm = params.get("arm") if params.get("arm") in self.arm_euler else "left"
+            axis = {"x": 0, "y": 1, "z": 2}.get(params.get("axis"))
+            if axis is not None:
+                self.arm_euler[arm][axis] += numeric(params.get("velocity_radps")) * dt
+        elif command == "gripper.jog":
+            arm = params.get("arm") if params.get("arm") in self.grippers else "left"
+            self.grippers[arm] = clamp(self.grippers[arm] + numeric(params.get("velocity_ratio_per_s")) * dt, 0.0, 1.0)
+        elif command == "head.jog":
+            if params.get("axis") == "yaw":
+                self.head_yaw = clamp(self.head_yaw + numeric(params.get("velocity_radps")) * dt, -math.pi, math.pi)
+            else:
+                self.head_pitch = clamp(self.head_pitch + numeric(params.get("velocity_radps")) * dt, -math.radians(45), math.radians(45))
+        elif command == "arm.move_to":
+            self._advance_arm_target_locked(params, dt)
+        elif command == "head.center":
+            speed = max(abs(numeric(params.get("max_angular_radps"), math.radians(30))), 0.01)
+            self.head_yaw = move_towards(self.head_yaw, 0.0, speed * dt)
+            self.head_pitch = move_towards(self.head_pitch, 0.0, speed * dt)
+            if abs(self.head_yaw) < 0.002 and abs(self.head_pitch) < 0.002:
+                self.head_yaw = self.head_pitch = 0.0
+                self._finish_motion_locked("completed", "OK", "头部回正完成")
+
+    def _advance_arm_target_locked(self, params: dict[str, Any], dt: float) -> None:
+        arm = params.get("arm") if params.get("arm") in self.arm_positions else "left"
+        target = params.get("position_m")
+        if not isinstance(target, list) or len(target) != 3:
+            self._finish_motion_locked("failed", "INVALID_ARGUMENT", "目标位置无效")
+            return
+        target_position = [numeric(value) for value in target]
+        speed = max(abs(numeric(params.get("max_linear_mps"), 0.12)), 0.01)
+        current = self.arm_positions[arm]
+        distance = math.sqrt(sum((target_position[i] - current[i]) ** 2 for i in range(3)))
+        if distance > 0:
+            step = min(distance, speed * dt)
+            ratio = step / distance
+            for index in range(3):
+                current[index] += (target_position[index] - current[index]) * ratio
+        target_orientation = params.get("orientation_xyzw")
+        if isinstance(target_orientation, list) and len(target_orientation) == 4:
+            current_q = quaternion_from_euler(*self.arm_euler[arm])
+            target_q = [numeric(value) for value in target_orientation]
+            norm = math.sqrt(sum(value * value for value in target_q)) or 1.0
+            target_q = [value / norm for value in target_q]
+            angular_speed = max(abs(numeric(params.get("max_angular_radps"), math.radians(45))), 0.01)
+            alpha = clamp(angular_speed * dt / max(quaternion_distance(current_q, target_q), 0.001), 0.0, 1.0)
+            interpolated = [current_q[i] + (target_q[i] - current_q[i]) * alpha for i in range(4)]
+            norm = math.sqrt(sum(value * value for value in interpolated)) or 1.0
+            interpolated = [value / norm for value in interpolated]
+            # The simulator only needs a stable feedback quaternion. Keep the
+            # orientation target exact once the position has arrived.
+            if distance <= 0.002 and quaternion_distance(interpolated, target_q) <= 0.01:
+                interpolated = target_q
+            self.arm_euler[arm] = self._euler_from_quaternion(interpolated)
+            orientation_done = quaternion_distance(interpolated, target_q) <= 0.01
+        else:
+            orientation_done = True
+        if distance <= 0.002 and orientation_done:
+            self.arm_positions[arm] = target_position
+            self._finish_motion_locked("completed", "OK", "目标动作完成")
+
+    @staticmethod
+    def _euler_from_quaternion(quaternion: list[float]) -> list[float]:
+        x, y, z, w = quaternion
+        return [
+            math.atan2(2 * (w * x + y * z), 1 - 2 * (x * x + y * y)),
+            math.asin(clamp(2 * (w * y - z * x), -1.0, 1.0)),
+            math.atan2(2 * (w * z + x * y), 1 - 2 * (y * y + z * z)),
+        ]
+
+    def _finish_motion_locked(self, phase: str, code: str, msg: str) -> None:
+        motion = self.motion
+        if not motion:
+            return
+        self.motion = None
+        self.base_linear = 0.0
+        self.base_angular = 0.0
+        self.pending_events.append({
+            "motion_id": motion["motion_id"],
+            "phase": phase,
+            "code": code,
+            "msg": msg,
+            "data": self.state_data_locked(),
+        })
+
     def command(self, session_id: str, name: str, params: dict[str, Any]) -> dict[str, Any]:
         with self.lock:
             self.expire_locked()
+            self._advance_motion_locked()
 
             if name == "system.ping":
                 return self.ok("Pong", {"robot_id": "print-receiver"})
@@ -226,6 +393,7 @@ class ReceiverState:
                         "robot_name": "ZRCP Print Receiver",
                         "role": "operator",
                         "max_frame_bytes": MAX_FRAME_BYTES,
+                        "state_rate_hz": 10,
                         "commands": sorted(MOTION_COMMANDS | {
                             "system.hello", "system.ping", "system.describe", "state.get",
                             "state.subscribe", "control.acquire", "control.enable",
@@ -242,9 +410,7 @@ class ReceiverState:
                 if not self.lease_id:
                     self.session_id = session_id
                     self.lease_id = f"print-lease-{secrets.token_hex(6)}"
-                    self.lease_deadline = time.monotonic() + self.lease_seconds
-                else:
-                    self.lease_deadline = time.monotonic() + self.lease_seconds
+                self.lease_deadline = time.monotonic() + self.lease_seconds
                 return self.ok("Control lease acquired", {
                     "lease_id": self.lease_id,
                     "lease_expires_ms": robot_time_ms() + int(self.lease_seconds * 1000),
@@ -268,6 +434,8 @@ class ReceiverState:
                 failure = self.check_lease_locked(session_id, params)
                 if failure:
                     return failure
+                if self.motion:
+                    self._finish_motion_locked("stopped", "STOPPED", "控制权释放，动作已停止")
                 self._clear_lease_locked()
                 return self.ok("Control released", {"enabled": False})
             if name == "motion.stop_all":
@@ -275,7 +443,8 @@ class ReceiverState:
                     failure = self.check_lease_locked(session_id, params)
                     if failure:
                         return failure
-                self.motion = None
+                if self.motion:
+                    self._finish_motion_locked("stopped", "STOPPED", "全部动作已停止")
                 self.enabled = False
                 return self.ok("All motion stopped", {"stop_requested": True, "enabled": False})
 
@@ -298,11 +467,12 @@ class ReceiverState:
                     if seq <= self.motion["seq"]:
                         return self.error("SEQUENCE_REPLAY", "Motion sequence must increase.")
                     self.motion["seq"] = seq
+                    self.motion["last_keepalive"] = time.monotonic()
                     return self.ok("Motion keepalive accepted", {"motion_id": motion_id, "phase": "running"})
 
                 if name == "motion.stop":
                     if self.motion and self.motion["motion_id"] == motion_id:
-                        self.motion = None
+                        self._finish_motion_locked("stopped", "STOPPED", "动作已停止")
                     return self.ok("Motion stopped", {"motion_id": motion_id, "stop_requested": True})
 
                 if self.motion and self.motion["motion_id"] != motion_id:
@@ -310,17 +480,55 @@ class ReceiverState:
                 seq = params.get("seq", 1)
                 if not isinstance(seq, int) or isinstance(seq, bool) or seq < 1:
                     return self.error("INVALID_ARGUMENT", "seq must be a positive integer.")
-                self.motion = {"motion_id": motion_id, "seq": seq, "command": name}
+                self.motion = {
+                    "motion_id": motion_id,
+                    "seq": seq,
+                    "command": name,
+                    "params": dict(params),
+                    "last_keepalive": time.monotonic(),
+                }
                 return self.ok("Motion accepted", {"motion_id": motion_id, "phase": "accepted"})
 
             return self.error("UNKNOWN_COMMAND", f"Unsupported command: {name}")
+
+    def snapshot(self) -> dict[str, Any]:
+        with self.lock:
+            self.expire_locked()
+            self._advance_motion_locked()
+            return self.state_data_locked()
+
+    def drain_events(self) -> list[dict[str, Any]]:
+        with self.lock:
+            events = self.pending_events
+            self.pending_events = []
+            return events
 
     def state_data_locked(self) -> dict[str, Any]:
         return {
             "robot_id": "print-receiver",
             "enabled": self.enabled,
             "control_held": self.lease_id is not None,
-            "active_motion": dict(self.motion) if self.motion else None,
+            "active_motion": ({
+                "motion_id": self.motion["motion_id"],
+                "seq": self.motion["seq"],
+                "command": self.motion["command"],
+                "phase": "running",
+            } if self.motion else None),
+            "base": {"linear_mps": self.base_linear, "angular_radps": self.base_angular},
+            "body": {
+                "lift": {"position_m": self.body_lift, "min_m": 0.30, "max_m": 1.05},
+                "pitch": {"position_rad": self.body_pitch, "min_rad": -math.radians(30), "max_rad": math.radians(30)},
+            },
+            "waist": {"yaw": {"position_rad": self.waist_yaw}},
+            "arms": {
+                arm: {"position_m": list(self.arm_positions[arm]), "orientation_xyzw": quaternion_from_euler(*self.arm_euler[arm])}
+                for arm in ("left", "right")
+            },
+            "grippers": {arm: {"opening_ratio": self.grippers[arm]} for arm in ("left", "right")},
+            "head": {
+                "yaw": {"position_rad": self.head_yaw},
+                "pitch": {"position_rad": self.head_pitch},
+            },
         }
 
 
@@ -333,11 +541,64 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
         self.send_lock = threading.Lock()
         self.buffer = bytearray()
         self.request.settimeout(1.0)
+        self.feedback_stop = threading.Event()
+        self.feedback_interval = STATE_INTERVAL_SECONDS
+        self.feedback_thread = threading.Thread(target=self.feedback_loop, name="receiver-feedback", daemon=True)
+        self.feedback_thread.start()
         print(f"[CONN] {self.client_address[0]}:{self.client_address[1]}", flush=True)
 
     def finish(self) -> None:
+        self.feedback_stop.set()
         self.state.disconnect(self.session_id)
         print(f"[CLOSE] {self.client_address[0]}:{self.client_address[1]}", flush=True)
+
+    def send_frame(self, message: dict[str, Any]) -> None:
+        payload = json_line(message).encode("utf-8")
+        if len(payload) > MAX_FRAME_BYTES:
+            raise ValueError("message exceeds maximum frame size")
+        frame = len(payload).to_bytes(4, "big") + payload
+        with self.send_lock:
+            self.request.sendall(frame)
+
+    def send_state(self) -> None:
+        if not self.session_id:
+            return
+        self.send_frame({
+            "v": PROTOCOL_VERSION,
+            "type": "state",
+            "session_id": self.session_id,
+            "robot_time_ms": robot_time_ms(),
+            "data": self.state.snapshot(),
+        })
+
+    def send_result(self, event: dict[str, Any]) -> None:
+        if not self.session_id:
+            return
+        message = {
+            "v": PROTOCOL_VERSION,
+            "type": "result",
+            "session_id": self.session_id,
+            "robot_time_ms": robot_time_ms(),
+            **event,
+        }
+        self.send_frame(message)
+        print(f"[TX] {event.get('msg', event.get('phase', '动作已结束'))}", flush=True)
+
+    def flush_feedback(self) -> None:
+        if not self.session_id:
+            return
+        for event in self.state.drain_events():
+            self.send_result(event)
+        self.send_state()
+
+    def feedback_loop(self) -> None:
+        while not self.feedback_stop.wait(self.feedback_interval):
+            if not self.session_id:
+                continue
+            try:
+                self.flush_feedback()
+            except (OSError, ValueError):
+                return
 
     def send_response(self, request: dict[str, Any], result: dict[str, Any], session_id: Optional[str]) -> None:
         response = {
@@ -349,12 +610,7 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
             "robot_time_ms": robot_time_ms(),
             **result,
         }
-        payload = json_line(response).encode("utf-8")
-        if len(payload) > MAX_FRAME_BYTES:
-            raise ValueError("response exceeds maximum frame size")
-        frame = len(payload).to_bytes(4, "big") + payload
-        with self.send_lock:
-            self.request.sendall(frame)
+        self.send_frame(response)
         if request.get("command") not in QUIET_COMMANDS:
             print(f"[TX] {response_summary(request, result)}", flush=True)
 
@@ -400,6 +656,7 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
                 "role": "operator",
                 "max_frame_bytes": MAX_FRAME_BYTES,
             }), self.session_id)
+            self.flush_feedback()
             return True
 
         if not self.session_id:
@@ -410,6 +667,10 @@ class PrintReceiverHandler(socketserver.BaseRequestHandler):
             return False
         result = self.state.command(self.session_id, command, params)
         self.send_response(message, result, self.session_id)
+        if command == "state.subscribe":
+            rate_hz = clamp(numeric(params.get("rate_hz"), 10.0), 1.0, 20.0)
+            self.feedback_interval = 1.0 / rate_hz
+        self.flush_feedback()
         return True
 
     def handle(self) -> None:
