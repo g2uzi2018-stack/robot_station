@@ -20,7 +20,9 @@ const userPatchSchema = z.object({ displayName: z.string().min(1).max(120).optio
 const commandSchema = z.object({ command: z.string().min(1), params: z.record(z.string(), z.unknown()).default({}) });
 const robotConnectionSchema = z.object({ name: z.string().trim().min(1).max(80), host: z.string().trim().min(1).max(255), port: z.coerce.number().int().min(1).max(65535), token: z.string().min(1).max(4096) });
 const robotConnectSchema = z.object({ profileId: z.coerce.number().int().positive() });
-const allowedRobotCommands = new Set(['system.ping','system.describe','state.get','state.subscribe','control.acquire','control.enable','control.heartbeat','control.release','motion.stop','motion.stop_all','motion.keepalive','base.jog','body.lift.jog','body.pitch.jog','waist.yaw.jog','arm.position.jog','arm.rotation.jog','arm.move_to','gripper.jog','head.jog','head.center']);
+const allowedRobotCommands = new Set(['system.ping','system.describe','state.get','state.subscribe','control.acquire','control.enable','control.heartbeat','control.release','motion.stop','motion.stop_all','motion.keepalive','base.jog','body.lift.jog','body.pitch.jog','waist.yaw.jog','arm.position.jog','arm.rotation.jog','arm.joint.jog','arm.move_to','gripper.jog','head.jog','head.center']);
+const robotDeadlineCommands = new Set(['control.heartbeat','motion.keepalive','base.jog','body.lift.jog','body.pitch.jog','waist.yaw.jog','arm.position.jog','arm.rotation.jog','arm.joint.jog','arm.move_to','gripper.jog','head.jog','head.center']);
+const maxRobotCommandValidityMs = 1000;
 const sessionCookie = { httpOnly: true, sameSite: 'lax' as const, secure: config.isProduction, path: '/' };
 function unauthorized(reply: FastifyReply) { return reply.code(401).send({ ok:false, code:'UNAUTHORIZED', msg:'Login required', data:{} }); }
 async function requireAuth(request: FastifyRequest, reply: FastifyReply): Promise<void> { const user = findUserBySession(request.cookies[config.cookieName]); if (!user || !user.enabled) { unauthorized(reply); return; } request.user = user; }
@@ -43,13 +45,26 @@ app.delete('/api/robot/connections/:id', { preHandler: roleGuard('admin','operat
 app.get('/api/robot/status', { preHandler: requireAuth }, async () => ({ok:true,code:'OK',msg:'Robot status',data:robot.getStatus()}));
 app.post('/api/robot/connect', { preHandler: roleGuard('admin','operator') }, async (request, reply) => { const parsed=robotConnectSchema.safeParse(request.body); if(!parsed.success) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'A saved connection is required',data:{}}); const profile=findRobotConnectionById(parsed.data.profileId); if(!profile) return reply.code(404).send({ok:false,code:'NOT_FOUND',msg:'Robot connection not found',data:{}}); if (leaseOwner) return reply.code(409).send({ok:false,code:'CONTROL_BUSY',msg:'Stop and release the active control lease before switching robots',data:{}}); const target: RobotTarget={host:profile.host,port:profile.port,token:profile.token,profileId:profile.id,profileName:profile.name}; try { await robot.reconnect(target); audit(request.user!.id,'robot.connection.select',{connectionId:profile.id,name:profile.name}); return {ok:true,code:'OK',msg:'Robot connection established',data:robot.getStatus()}; } catch(error) { return reply.code(502).send({ok:false,code:'ROBOT_UNAVAILABLE',msg:error instanceof Error?error.message:'Robot unavailable',data:robot.getStatus()}); } });
 app.post('/api/robot/reconnect', { preHandler: roleGuard('admin','operator') }, async (_request, reply) => { try { await robot.reconnect(); return {ok:true,code:'OK',msg:'Robot connection refreshed',data:robot.getStatus()}; } catch(error) { return reply.code(502).send({ok:false,code:'ROBOT_UNAVAILABLE',msg:error instanceof Error?error.message:'Robot unavailable',data:robot.getStatus()}); } });
-app.post('/api/robot/command', { preHandler: roleGuard('admin','operator') }, async (request, reply) => { const parsed=commandSchema.safeParse(request.body); if(!parsed.success) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Invalid command input',data:{}}); if(!allowedRobotCommands.has(parsed.data.command)) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Command is not allowed by the gateway',data:{}}); try { const response=await robot.send(parsed.data.command,parsed.data.params); audit(request.user!.id,'robot.command',{command:parsed.data.command,ok:response.ok,code:response.code}); const data={...response.data}; if(parsed.data.command==='control.acquire') delete data.lease_id; return {ok:response.ok,code:response.code,msg:response.msg,data}; } catch(error) { return reply.code(502).send({ok:false,code:'ROBOT_TIMEOUT',msg:error instanceof Error?error.message:'Robot unavailable',data:{}}); } });
+app.post('/api/robot/command', { preHandler: roleGuard('admin','operator') }, async (request, reply) => { const parsed=commandSchema.safeParse(request.body); if(!parsed.success) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Invalid command input',data:{}}); if(!allowedRobotCommands.has(parsed.data.command)) return reply.code(400).send({ok:false,code:'INVALID_ARGUMENT',msg:'Command is not allowed by the gateway',data:{}}); try { const robotParams=await prepareRobotParams(parsed.data.command,parsed.data.params); const response=await robot.send(parsed.data.command,robotParams); audit(request.user!.id,'robot.command',{command:parsed.data.command,ok:response.ok,code:response.code}); const data={...response.data}; if(parsed.data.command==='control.acquire') delete data.lease_id; return {ok:response.ok,code:response.code,msg:response.msg,data}; } catch(error) { const failure=asFailure(error); return reply.code(failure.httpStatus).send({ok:false,code:failure.code,msg:failure.msg,data:failure.data}); } });
 
 type ControlState = { leaseId: string | null; enabled: boolean; closed: boolean; chain: Promise<void> };
 const controlSockets = new Set<any>();
 let leaseOwner: ControlState | null = null;
 function ack(socket: any, id: unknown, motionId: unknown, response: {ok:boolean; code:string; msg:string; data?:Record<string,unknown>}, command?: string) { sendJson(socket, { web_v:1, type:'ack', id: typeof id==='string' ? id : undefined, motion_id: typeof motionId==='string' ? motionId : null, command, ok:response.ok, code:response.code, msg:response.msg, data:response.data ?? {} }); }
-function asFailure(error: unknown) { return { ok:false, code:'ROBOT_TIMEOUT', msg:error instanceof Error ? error.message : 'Robot unavailable', data:{} }; }
+class GatewayFailure extends Error {
+  constructor(public readonly code: string, message: string, public readonly data: Record<string,unknown>, public readonly httpStatus = 400) { super(message); this.name='GatewayFailure'; }
+}
+function gatewayError(category: string, stage: string, component: string, retryable: boolean, action: string, extra: Record<string,unknown> = {}) {
+  return { error:{ category, stage, component, retryable, action, ...extra } };
+}
+function asFailure(error: unknown) {
+  if (error instanceof GatewayFailure) return { ok:false as const, code:error.code, msg:error.message, data:error.data, httpStatus:error.httpStatus };
+  const msg=error instanceof Error ? error.message : 'Robot unavailable';
+  const timeout=/timeout|timed out/i.test(msg);
+  const unavailable=/closed|connect|socket|ECONN|unavailable|not connected/i.test(msg);
+  const code=timeout ? 'ROBOT_TIMEOUT' : unavailable ? 'ROBOT_UNAVAILABLE' : 'INTERNAL_ERROR';
+  return { ok:false as const, code, msg, data:gatewayError(timeout?'transport':unavailable?'transport':'internal','transport','robot_connection',true,unavailable?'reconnect':'retry'), httpStatus:502 };
+}
 async function releaseControl(state: ControlState) {
   const leaseId = state.leaseId;
   if (!leaseId) { state.enabled = false; if (leaseOwner === state) leaseOwner = null; return; }
@@ -62,6 +77,38 @@ async function releaseControl(state: ControlState) {
   state.leaseId = null;
   if (leaseOwner === state) leaseOwner = null;
 }
+async function prepareRobotParams(command: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  if (!robotDeadlineCommands.has(command)) return params;
+  const rawDeadline = params.ui_deadline_ms ?? params.deadline_ms;
+  if (typeof rawDeadline !== 'number' || !Number.isSafeInteger(rawDeadline)) {
+    throw new GatewayFailure('DEADLINE_INVALID','A UI deadline is required for this command',gatewayError('protocol','admission','gateway',true,'retry',{command}),400);
+  }
+
+  const now = Date.now();
+  // An absolute value is treated as a browser/server wall-clock deadline.
+  // A short value is a bounded relative budget for pages that deliberately do
+  // not assume their clock is synchronized with the gateway. Neither form is
+  // forwarded as if it were already on the robot monotonic clock.
+  const remaining = rawDeadline < 1_000_000_000_000
+    ? Math.min(maxRobotCommandValidityMs, Math.max(1, rawDeadline))
+    : rawDeadline - now;
+  if (!Number.isSafeInteger(remaining) || remaining <= 0 || remaining > maxRobotCommandValidityMs) {
+    throw new GatewayFailure('DEADLINE_INVALID',`UI command deadline is expired or exceeds ${maxRobotCommandValidityMs} ms`,gatewayError('protocol','admission','gateway',true,'retry',{command,requested:remaining,unit:'ms'}),400);
+  }
+
+  let deadline = robot.deadlineAfter(remaining);
+  if (deadline === null) {
+    const ping = await robot.send('system.ping', {});
+    if (!ping.ok || !Number.isSafeInteger(ping.robot_time_ms)) {
+      throw new GatewayFailure('ROBOT_UNAVAILABLE','Robot clock synchronization failed',gatewayError('transport','transport','robot_connection',true,'reconnect',{command}),502);
+    }
+    deadline = ping.robot_time_ms + remaining;
+  }
+  const outbound = { ...params };
+  delete outbound.ui_deadline_ms;
+  outbound.deadline_ms = deadline;
+  return outbound;
+}
 async function handleControlMessage(socket: any, state: ControlState, user: User, raw: string) {
   let message: {type?:string; id?:string; action?:string; motion_id?:string; params?:Record<string,unknown>};
   try { message=JSON.parse(raw); } catch { ack(socket,undefined,null,{ok:false,code:'INVALID_MESSAGE',msg:'Invalid WebSocket message',data:{}}); return; }
@@ -73,10 +120,26 @@ async function handleControlMessage(socket: any, state: ControlState, user: User
     if (message.action==='control.acquire') { if (leaseOwner && leaseOwner !== state) { ack(socket,message.id,null,{ok:false,code:'CONTROL_BUSY',msg:'Another operator currently holds control',data:{}},message.action); return; } if (state.leaseId) { ack(socket,message.id,null,{ok:true,code:'OK',msg:'Control lease already held',data:{enabled:state.enabled}},message.action); return; } leaseOwner=state; const response=await robot.send('control.acquire',params); const leaseId=typeof response.data.lease_id==='string' ? response.data.lease_id : null; if (response.ok && leaseId) state.leaseId=leaseId; else if (leaseOwner === state) leaseOwner=null; const data={...response.data}; delete data.lease_id; ack(socket,message.id,null,{...response,data},message.action); return; }
     if (message.action==='control.enable') { if (!state.leaseId && leaseOwner && leaseOwner !== state) { ack(socket,message.id,null,{ok:false,code:'CONTROL_BUSY',msg:'Another operator currently holds control',data:{}},message.action); return; } if (!state.leaseId) { leaseOwner=state; const acquired=await robot.send('control.acquire',{}); const leaseId=typeof acquired.data.lease_id==='string' ? acquired.data.lease_id : null; if(!acquired.ok || !leaseId) { if (leaseOwner === state) leaseOwner=null; ack(socket,message.id,null,acquired,message.action); return; } state.leaseId=leaseId; } const response=await robot.send('control.enable',{...params,lease_id:state.leaseId}); if (response.ok) state.enabled=true; else { await releaseControl(state); } ack(socket,message.id,null,{...response,data:{...response.data,enabled:response.ok}},message.action); return; }
     if (message.action==='control.release') { const leaseId=state.leaseId; const response=leaseId ? await robot.send('control.release',{...params,lease_id:leaseId}) : {ok:true,code:'OK',msg:'Control already released',data:{}}; state.leaseId=null; state.enabled=false; if (leaseOwner===state) leaseOwner=null; ack(socket,message.id,null,response,message.action); return; }
-    if (message.action==='motion.stop_all') { const response=await robot.send('motion.stop_all',{...params,...(state.leaseId?{lease_id:state.leaseId}:{})}); state.enabled=false; ack(socket,message.id,null,response,message.action); return; }
-    if (['control.heartbeat','motion.stop','motion.keepalive','base.jog','body.lift.jog','body.pitch.jog','waist.yaw.jog','arm.position.jog','arm.rotation.jog','arm.move_to','gripper.jog','head.jog','head.center'].includes(message.action) && !state.leaseId) { ack(socket,message.id,message.motion_id,{ok:false,code:'LEASE_REQUIRED',msg:'Control lease is not enabled',data:{}},message.action); return; }
+    if (message.action==='motion.stop_all') {
+      // A stale page may still send its shutdown stop after a newer page has
+      // acquired the exclusive robot lease.  Forwarding a lease-less global
+      // stop would revoke that newer operator's control as a side effect.
+      // Only the current lease owner may stop the robot; for a socket without
+      // a lease the safe result is simply an already-stopped acknowledgement.
+      if (!state.leaseId || leaseOwner !== state) {
+        state.enabled=false;
+        ack(socket,message.id,null,{ok:true,code:'OK',msg:'No control lease held',data:{}},message.action);
+        return;
+      }
+      const response=await robot.send('motion.stop_all',{...params,lease_id:state.leaseId});
+      state.enabled=false;
+      ack(socket,message.id,null,response,message.action);
+      return;
+    }
+    if (['control.heartbeat','motion.stop','motion.keepalive','base.jog','body.lift.jog','body.pitch.jog','waist.yaw.jog','arm.position.jog','arm.rotation.jog','arm.joint.jog','arm.move_to','gripper.jog','head.jog','head.center'].includes(message.action) && !state.leaseId) { ack(socket,message.id,message.motion_id,{ok:false,code:'LEASE_REQUIRED',msg:'Control lease is not enabled',data:{}},message.action); return; }
     if (state.leaseId) params.lease_id=state.leaseId;
-    const response=await robot.send(message.action,params); ack(socket,message.id,message.motion_id,response,message.action);
+    const robotParams = await prepareRobotParams(message.action, params);
+    const response=await robot.send(message.action,robotParams); ack(socket,message.id,message.motion_id,response,message.action);
   } catch (error) { ack(socket,message.id,message.motion_id,asFailure(error),message.action); }
 }
 app.register(async (instance) => { instance.get('/api/control', { websocket: true }, (socket: any, request: any) => {
@@ -92,7 +155,7 @@ robot.on('status',(status)=>{ for(const socket of controlSockets) sendJson(socke
 app.get('/', async (_request, reply) => reply.sendFile('index.html'));
 app.get('/session.js', async (_request, reply) => reply.sendFile('session.js'));
 app.get('/bridge.js', async (_request, reply) => reply.sendFile('bridge.js'));
-app.get('/console.html', { preHandler: requireAuth }, async (_request, reply) => reply.sendFile('console.html'));
+app.get('/console.html', { preHandler: requireAuth }, async (_request, reply) => reply.header('cache-control','no-store').sendFile('console.html',{cacheControl:false}));
 app.get('/admin', { preHandler: roleGuard('admin') }, async (_request, reply) => reply.sendFile('admin.html'));
 
 await ensureAdmin();

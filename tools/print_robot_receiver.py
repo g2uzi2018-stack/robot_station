@@ -21,7 +21,7 @@ from typing import Any, Optional
 PROTOCOL_VERSION = 1
 MAX_FRAME_BYTES = 65_536
 LEASE_SECONDS = 60.0
-MOTION_WATCHDOG_SECONDS = 0.75
+MOTION_WATCHDOG_SECONDS = 1.0
 STATE_INTERVAL_SECONDS = 0.1
 QUIET_COMMANDS = {"system.ping", "control.heartbeat", "motion.keepalive"}
 MOTION_COMMANDS = {
@@ -31,6 +31,7 @@ MOTION_COMMANDS = {
     "waist.yaw.jog",
     "arm.position.jog",
     "arm.rotation.jog",
+    "arm.joint.jog",
     "arm.move_to",
     "gripper.jog",
     "head.jog",
@@ -122,6 +123,8 @@ def command_summary(command: str, params: dict[str, Any]) -> str:
     if command == "arm.rotation.jog":
         axis = {"x": ("向右倾", "向左倾"), "y": ("向下俯", "向上仰"), "z": ("向左转", "向右转")}.get(params.get("axis"), ("正向转动", "反向转动"))
         return f"{arm}{direction(params.get('velocity_radps', 0), axis[0], axis[1], 'rad/s')}"
+    if command == "arm.joint.jog":
+        return f"{arm} J{params.get('joint', '?')} {direction(params.get('velocity_radps', 0), '正向', '反向', 'rad/s')}"
     if command == "arm.move_to":
         position = params.get("position_m")
         if isinstance(position, list) and len(position) == 3:
@@ -161,9 +164,9 @@ def response_summary(request: dict[str, Any], result: dict[str, Any]) -> str:
         "CONTROL_BUSY": "控制权已被占用",
         "LEASE_REQUIRED": "缺少有效控制权",
         "LEASE_INVALID": "控制权无效",
-        "CONTROL_DISABLED": "控制尚未启用",
+        "NOT_ENABLED": "控制尚未启用",
         "INVALID_ARGUMENT": "参数无效",
-        "UNKNOWN_COMMAND": "命令不支持",
+        "NOT_IMPLEMENTED": "命令不支持",
     }
     code = str(result.get("code", "ERROR"))
     return f"操作失败：{errors.get(code, code)}"
@@ -219,6 +222,7 @@ class ReceiverState:
         self.head_pitch = 0.0
         self.arm_positions = {"left": [0.35, 0.24, 0.68], "right": [0.35, -0.24, 0.68]}
         self.arm_euler = {"left": [0.0, 0.0, 0.0], "right": [0.0, 0.0, 0.0]}
+        self.arm_joints = {"left": [0.0] * 7, "right": [0.0] * 7}
         self.grippers = {"left": 0.65, "right": 0.65}
 
     def expire_locked(self) -> None:
@@ -269,7 +273,7 @@ class ReceiverState:
             self.base_angular = 0.0
             return
         if now - float(motion["last_keepalive"]) > MOTION_WATCHDOG_SECONDS:
-            self._finish_motion_locked("stopped", "WATCHDOG_STOPPED", "动作保活超时，已停止")
+            self._finish_motion_locked("failed", "COMMAND_EXPIRED", "动作保活超时，已停止")
             return
 
         command = motion["command"]
@@ -298,6 +302,16 @@ class ReceiverState:
             axis = {"x": 0, "y": 1, "z": 2}.get(params.get("axis"))
             if axis is not None:
                 self.arm_euler[arm][axis] += numeric(params.get("velocity_radps")) * dt
+        elif command == "arm.joint.jog":
+            arm = params.get("arm") if params.get("arm") in self.arm_joints else "left"
+            joint = params.get("joint")
+            if isinstance(joint, int) and not isinstance(joint, bool) and 1 <= joint <= 7:
+                index = joint - 1
+                self.arm_joints[arm][index] = clamp(
+                    self.arm_joints[arm][index] + numeric(params.get("velocity_radps")) * dt,
+                    -math.pi,
+                    math.pi,
+                )
         elif command == "gripper.jog":
             arm = params.get("arm") if params.get("arm") in self.grippers else "left"
             self.grippers[arm] = clamp(self.grippers[arm] + numeric(params.get("velocity_ratio_per_s")) * dt, 0.0, 1.0)
@@ -441,7 +455,7 @@ class ReceiverState:
                 if failure:
                     return failure
                 if self.motion:
-                    self._finish_motion_locked("stopped", "STOPPED", "控制权释放，动作已停止")
+                    self._finish_motion_locked("stopped", "CONTROL_RELEASED", "控制权释放，动作已停止")
                 self._clear_lease_locked()
                 return self.ok("Control released", {"enabled": False})
             if name == "motion.stop_all":
@@ -450,7 +464,7 @@ class ReceiverState:
                     if failure:
                         return failure
                 if self.motion:
-                    self._finish_motion_locked("stopped", "STOPPED", "全部动作已停止")
+                    self._finish_motion_locked("stopped", "STOP_ALL", "全部动作已停止")
                 self.enabled = False
                 return self.ok("All motion stopped", {"stop_requested": True, "enabled": False})
 
@@ -459,26 +473,26 @@ class ReceiverState:
                 if failure:
                     return failure
                 if not self.enabled:
-                    return self.error("CONTROL_DISABLED", "Control must be enabled first.")
+                    return self.error("NOT_ENABLED", "Control must be enabled first.")
                 motion_id = params.get("motion_id")
                 if not isinstance(motion_id, str) or not motion_id:
                     return self.error("INVALID_ARGUMENT", "motion_id is required.")
 
                 if name == "motion.keepalive":
                     if not self.motion or self.motion["motion_id"] != motion_id:
-                        return self.error("MOTION_NOT_FOUND", "No active motion matches motion_id.")
+                        return self.error("MOTION_NOT_ACTIVE", "No active motion matches motion_id.")
                     seq = params.get("seq")
                     if not isinstance(seq, int) or isinstance(seq, bool):
                         return self.error("INVALID_ARGUMENT", "seq must be an integer.")
                     if seq <= self.motion["seq"]:
-                        return self.error("SEQUENCE_REPLAY", "Motion sequence must increase.")
+                        return self.error("STALE_SEQUENCE", "Motion sequence must increase.")
                     self.motion["seq"] = seq
                     self.motion["last_keepalive"] = time.monotonic()
                     return self.ok("Motion keepalive accepted", {"motion_id": motion_id, "phase": "running"})
 
                 if name == "motion.stop":
                     if self.motion and self.motion["motion_id"] == motion_id:
-                        self._finish_motion_locked("stopped", "STOPPED", "动作已停止")
+                        self._finish_motion_locked("stopped", "USER_STOP", "动作已停止")
                     return self.ok("Motion stopped", {"motion_id": motion_id, "stop_requested": True})
 
                 if self.motion and self.motion["motion_id"] != motion_id:
@@ -495,7 +509,7 @@ class ReceiverState:
                 }
                 return self.ok("Motion accepted", {"motion_id": motion_id, "phase": "accepted"})
 
-            return self.error("UNKNOWN_COMMAND", f"Unsupported command: {name}")
+            return self.error("NOT_IMPLEMENTED", f"Unsupported command: {name}")
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:
@@ -527,7 +541,7 @@ class ReceiverState:
             },
             "waist": {"yaw": {"position_rad": self.waist_yaw}},
             "arms": {
-                arm: {"position_m": list(self.arm_positions[arm]), "orientation_xyzw": quaternion_from_euler(*self.arm_euler[arm])}
+                arm: {"position_m": list(self.arm_positions[arm]), "orientation_xyzw": quaternion_from_euler(*self.arm_euler[arm]), "joint_positions_rad": list(self.arm_joints[arm])}
                 for arm in ("left", "right")
             },
             "grippers": {arm: {"opening_ratio": self.grippers[arm]} for arm in ("left", "right")},

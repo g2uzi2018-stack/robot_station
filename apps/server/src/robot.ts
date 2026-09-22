@@ -1,5 +1,6 @@
 import net from 'node:net';
 import { EventEmitter } from 'node:events';
+import { performance } from 'node:perf_hooks';
 import { FrameDecoder, makeCommand, type Response, encodeFrame } from '@robot-station/protocol';
 
 export type RobotTarget = { host: string; port: number; token: string; profileId?: number | null; profileName?: string | null };
@@ -11,11 +12,18 @@ export class RobotGateway extends EventEmitter {
   private decoder = new FrameDecoder();
   private pending = new Map<string, Pending>();
   private connectPromise: Promise<void> | null = null;
+  private clockSample: { robotTimeMs: number; observedAtMs: number } | null = null;
   private target: RobotTarget | null = null;
   private status: RobotStatus = { mode: 'tcp', connected: false, sessionId: null, robotId: null, lastError: null, connectionId: null, connectionName: null, host: null, port: null };
 
   getStatus(): RobotStatus { return { ...this.status }; }
   getTarget(): RobotTarget | null { return this.target ? { ...this.target } : null; }
+  deadlineAfter(validityMs: number, maxSampleAgeMs = 2000): number | null {
+    if (!this.clockSample || !Number.isSafeInteger(validityMs) || validityMs < 1) return null;
+    const ageMs = performance.now() - this.clockSample.observedAtMs;
+    if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > maxSampleAgeMs) return null;
+    return Math.floor(this.clockSample.robotTimeMs + ageMs + validityMs);
+  }
 
   async connect(target?: RobotTarget): Promise<void> {
     if (target) {
@@ -39,6 +47,7 @@ export class RobotGateway extends EventEmitter {
     const socket = net.createConnection({ host: target.host, port: target.port });
     this.socket = socket;
     this.decoder = new FrameDecoder();
+    this.clockSample = null;
     socket.on('data', (chunk) => this.onData(chunk));
     socket.on('timeout', () => {
       if (!this.isCurrent(socket)) return;
@@ -56,6 +65,7 @@ export class RobotGateway extends EventEmitter {
     socket.on('close', () => {
       if (!this.isCurrent(socket)) return;
       this.socket = null;
+      this.clockSample = null;
       this.rejectPending(new Error('robot connection closed'));
       this.status = { ...this.status, connected: false, sessionId: null, robotId: null };
       this.emit('status', this.getStatus());
@@ -77,6 +87,7 @@ export class RobotGateway extends EventEmitter {
     } catch (error) {
       if (this.isCurrent(socket)) {
         this.socket = null;
+        this.clockSample = null;
         this.rejectPending(error instanceof Error ? error : new Error(String(error)));
         this.status = { ...this.status, connected: false, sessionId: null, robotId: null, lastError: error instanceof Error ? error.message : String(error) };
         this.emit('status', this.getStatus());
@@ -93,6 +104,7 @@ export class RobotGateway extends EventEmitter {
   disconnect(): void {
     const socket = this.socket;
     this.socket = null;
+    this.clockSample = null;
     this.rejectPending(new Error('robot connection closed'));
     socket?.destroy();
     this.status = { ...this.status, connected: false, sessionId: null, robotId: null };
@@ -130,6 +142,9 @@ export class RobotGateway extends EventEmitter {
   private onData(chunk: Buffer): void {
     try {
       for (const message of this.decoder.push(chunk)) {
+        if ('robot_time_ms' in message && Number.isSafeInteger(message.robot_time_ms)) {
+          this.clockSample = { robotTimeMs: message.robot_time_ms, observedAtMs: performance.now() };
+        }
         if (message.type === 'response') {
           const handler = this.pending.get(message.id);
           if (handler) { this.pending.delete(message.id); clearTimeout(handler.timer); handler.resolve(message); }
